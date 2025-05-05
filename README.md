@@ -8,3 +8,5 @@ Reference link: https://huggingface.co/datasets/enelpol/rag-mini-bioasq
 # Graph database
 - Neo4j Desktop 1.6.1
 
+# Neo4j Graph Schema Visualization
+![alt text](images/neo4j_schema_visualization.png)

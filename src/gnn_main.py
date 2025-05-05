@@ -5,6 +5,7 @@ import torch
 from sklearn.metrics import average_precision_score, roc_auc_score
 
 from configs.config import ConfigEnv, ConfigPath
+from graph_embeddings.compute_graph_embeddings import write_graph_embeddings_to_neo4j
 from graph_embeddings.data_extraction import (
     connect_to_neo4j,
     create_gds_graph,
@@ -72,7 +73,7 @@ def run_gnn_training(apply_sampling: bool = False) -> None:
         scheduler=scheduler,
         train_data=train_data,
         val_data=val_data,
-        epochs=300,
+        epochs=1000,
         λ_feat=0.5,
         patience=10,
     )
@@ -97,4 +98,5 @@ def run_gnn_training(apply_sampling: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    run_gnn_training(apply_sampling=False)
+    # run_gnn_training(apply_sampling=False)
+    write_graph_embeddings_to_neo4j()

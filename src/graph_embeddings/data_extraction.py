@@ -34,10 +34,10 @@ def sample_graph(
 
 def fetch_topology(
     gds: GraphDataScience,
-    sampled_graph,
+    graph,
 ) -> torch.LongTensor:
     """Fetch and normalize edge indices from sampled graph."""
-    rel_df = gds.beta.graph.relationships.stream(sampled_graph)
+    rel_df = gds.beta.graph.relationships.stream(graph)
     # Group by relationship type
     by_type = rel_df.by_rel_type()
     # Assuming single relation type 'IS_SIMILAR_TO'
@@ -45,7 +45,7 @@ def fetch_topology(
     # Obtain nodeId index mapping to consecutive IDs
     # Fetch node properties to get consistent nodeId ordering
     node_df = gds.graph.nodeProperties.stream(
-        sampled_graph, ["embedding"], separate_property_columns=True
+        graph, ["embedding"], separate_property_columns=True
     )
     old_to_new = {old: new for new, old in enumerate(node_df["nodeId"])}
     src_idx = [old_to_new[n] for n in src]
