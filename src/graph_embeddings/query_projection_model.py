@@ -8,14 +8,36 @@ import torch.nn as nn
 import torch.optim as optim
 from neo4j import GraphDatabase
 from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
 
 
-class Neo4jLoader:
+class DataProcessor:
     """Load QA_PAIR → CONTEXT embedding pairs from Neo4j."""
 
     def __init__(self, uri: str, user: str, password: str, database: str = "neo4j"):
         self.driver = GraphDatabase.driver(uri, auth=(user, password))
         self.database = database
+
+    def embed_questions_and_store(self, embedding_model) -> None:
+        query = """MATCH (qa:QA_PAIR) WHERE qa.embedding IS NULL RETURN qa.id as qa_id, qa.question as question"""
+        with self.driver.session() as session:
+            result = session.run(query)
+            questions_df = pd.DataFrame([dict(record) for record in result])
+        if not questions_df.empty:
+            question_embeddings = embedding_model.embed_documents(
+                questions_df["question"].tolist()
+            )
+            questions_df["embeddings"] = question_embeddings
+            with self.driver.session() as session:
+                for index, row in tqdm(questions_df.iterrows()):
+                    query = """
+                    MATCH (qa:QA_PAIR {id: $qa_id})
+                    CALL db.create.setNodeVectorProperty(qa, 'embedding', $embedding)
+                    """
+                    session.run(query, qa_id=row["qa_id"], embedding=row["embeddings"])
+            print("Question embeddings stored in the graph database!")
+        else:
+            print("No questions found for embedding.")
 
     def fetch_pairs(self) -> pd.DataFrame:
         """
@@ -25,9 +47,8 @@ class Neo4jLoader:
           - c_emb: list[float] (graph)
         """
         query = """
-        // adjust property names if yours differ
-        MATCH (q:QA_PAIR)-[:HAS_CONTEXT]->(c:CONTEXT)
-        RETURN id(q) AS qid, q.bert_embedding AS q_emb, c.graph_embeddings AS c_emb
+        MATCH (qa:QA_PAIR)-[:HAS_CONTEXT]->(context:CONTEXT)
+        RETURN qa.id AS qa_id, qa.embedding AS question_embedding, context.graph_embedding AS context_graph_embedding
         """
         with self.driver.session(database=self.database) as sess:
             result = sess.run(query)
@@ -35,9 +56,9 @@ class Neo4jLoader:
             for rec in result:
                 rows.append(
                     {
-                        "qid": rec["qid"],
-                        "q_emb": rec["q_emb"],
-                        "c_emb": rec["c_emb"],
+                        "qid": rec["qa_id"],
+                        "q_emb": rec["question_embedding"],
+                        "c_emb": rec["context_graph_embedding"],
                     }
                 )
         return pd.DataFrame(rows)
@@ -95,7 +116,7 @@ def train_query_proj(
     lr: float = 1e-3,
     batch_size: int = 32,
     epochs: int = 50,
-    device: str = "cpu",
+    device: str = "cuda",
 ) -> Tuple[QueryProj, List[float]]:
     """
     Trains QueryProj to minimize MSE(project(q), avg_context_graph).
@@ -144,42 +165,3 @@ def project_query(
         )  # [1, dim_sem]
         z = model(q)  # [1, dim_graph]
     return z.squeeze(0).cpu()
-
-
-if __name__ == "__main__":
-    import argparse
-
-    p = argparse.ArgumentParser()
-    p.add_argument("--uri", required=True)
-    p.add_argument("--user", required=True)
-    p.add_argument("--password", required=True)
-    p.add_argument("--database", default="neo4j")
-    p.add_argument("--dim-sem", type=int, required=True)
-    p.add_argument("--dim-graph", type=int, required=True)
-    p.add_argument("--lr", type=float, default=1e-3)
-    p.add_argument("--batch-size", type=int, default=32)
-    p.add_argument("--epochs", type=int, default=50)
-    p.add_argument("--device", default="cpu")
-    args = p.parse_args()
-
-    # 1) load tabular data
-    loader = Neo4jLoader(args.uri, args.user, args.password, args.database)
-    df = loader.fetch_pairs()
-
-    # 2) build dataset
-    ds = QGDataset(df)
-
-    # 3) train mapping
-    model, losses = train_query_proj(
-        ds,
-        dim_sem=args.dim_sem,
-        dim_graph=args.dim_graph,
-        lr=args.lr,
-        batch_size=args.batch_size,
-        epochs=args.epochs,
-        device=args.device,
-    )
-
-    # 4) save weights
-    torch.save(model.state_dict(), "query_proj.pt")
-    print("Trained QueryProj saved to query_proj.pt")

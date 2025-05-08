@@ -84,7 +84,7 @@ def run_gnn_training(apply_sampling: bool = False) -> None:
 
     # 7. Save model & metrics
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = os.path.join(ConfigPath.MODELS_DIR, timestamp)
+    run_dir = os.path.join(ConfigPath.MODELS_DIR, f"gnn_{timestamp}")
     os.makedirs(run_dir, exist_ok=True)
 
     model_path = os.path.join(run_dir, "graphsage_encoder_pred.pt")
@@ -98,5 +98,5 @@ def run_gnn_training(apply_sampling: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    # run_gnn_training(apply_sampling=False)
+    run_gnn_training(apply_sampling=False)
     write_graph_embeddings_to_neo4j()
