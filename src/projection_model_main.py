@@ -32,10 +32,11 @@ if __name__ == "__main__":
     lr = 1e-3
     weight_decay = 1e-4
     batch_size = 32
-    epochs = 300
+    epochs = 100
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
 
-    model, losses = train_query_proj(
+    model, history = train_query_proj(
         ds,
         dim_sem=bert_dim,
         dim_graph=graph_dim,
@@ -57,7 +58,7 @@ if __name__ == "__main__":
 
     metrics_path = os.path.join(run_dir, "training_metrics.json")
     with open(metrics_path, "w") as f:
-        json.dump(losses, f)
+        json.dump(history, f)
     print("Training metrics saved to", metrics_path)
 
-    print("Training losses:", losses)
+    print("Training losses:", history)
