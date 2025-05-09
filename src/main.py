@@ -3,7 +3,6 @@ from datetime import datetime
 from typing import Any
 
 from configs import ConfigEnv, ConfigPath
-from configs.config import logger
 from data_collection.dataset_constructor import DatasetConstructor
 from data_collection.fetcher import MeshTermFetcher, PubMedArticleFetcher
 from data_collection.reader import BioASQDataReader
@@ -43,7 +42,7 @@ def construct_graph_dataset(asq_reader: BioASQDataReader):
     # 3. Fetch mesh term definitions
     mesh_fetcher = MeshTermFetcher()
     mesh_term_definitions = mesh_fetcher.fetch_definitions(mesh_terms=mesh_terms)
-    logger.info(f"Total Mesh Term Definitions: {len(mesh_term_definitions)}")
+    print(f"Total Mesh Term Definitions: {len(mesh_term_definitions)}")
 
     # 4. Combine BIOASQ and PubMed to create the graph data for loading into Neo4j
     dataset_constructor = DatasetConstructor(

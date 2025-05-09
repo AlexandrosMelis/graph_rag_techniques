@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional, Union
 from neo4j import GraphDatabase
 from neo4j.exceptions import Neo4jError
 
-from configs.config import logger
 from knowledge_graph.connection import Neo4jConnection
 
 
@@ -44,12 +43,10 @@ class GraphCrud:
             with self._driver.session() as session:
                 result = session.run(cypher, **params)
                 records = result.data()  # fetched inside session
-            logger.debug(f"Read {len(records)} rows. Cypher={cypher}")
+            print(f"Read {len(records)} rows. Cypher={cypher}")
             return records
         except Neo4jError as e:
-            logger.error(
-                f"Read failed: {e}\nCypher={cypher}\nParams={params}", exc_info=True
-            )
+            print(f"Read failed: {e}\nCypher={cypher}\nParams={params}", exc_info=True)
             raise
 
     def _execute_write(self, work) -> Any:
@@ -61,7 +58,7 @@ class GraphCrud:
             with self._driver.session() as session:
                 return session.write_transaction(work)
         except Neo4jError as e:
-            logger.error(f"Write failed: {e}", exc_info=True)
+            print(f"Write failed: {e}", exc_info=True)
             raise
 
     # ─── Node Operations ─────────────────────────────────────────────────
@@ -80,7 +77,7 @@ class GraphCrud:
             return rec["id"]
 
         node_id = self._execute_write(_work)
-        logger.debug(f"Created node `{label}` id={node_id}")
+        print(f"Created node `{label}` id={node_id}")
         return node_id
 
     def update_node(self, node_id: int, properties: Dict[str, Any]) -> int:
@@ -99,7 +96,7 @@ class GraphCrud:
             return rec["updated"] if rec else 0
 
         updated = self._execute_write(_work)
-        logger.debug(f"Updated node id={node_id}: {updated} props")
+        print(f"Updated node id={node_id}: {updated} props")
         return updated
 
     def delete_node(self, node_id: int) -> None:
@@ -110,7 +107,7 @@ class GraphCrud:
             tx.run(cy, id=node_id)
 
         self._execute_write(_work)
-        logger.debug(f"Deleted node id={node_id}")
+        print(f"Deleted node id={node_id}")
 
     # ─── Relationship Operations ────────────────────────────────────────
 
@@ -184,7 +181,7 @@ class GraphCrud:
             return created
 
         ids = self._execute_write(_work)
-        logger.debug(f"Created rel(s) `{rel_type}`: {ids}")
+        print(f"Created rel(s) `{rel_type}`: {ids}")
         return ids
 
     def create_relationships_batch(
@@ -234,9 +231,7 @@ class GraphCrud:
             return cnt
 
         created = self._execute_write(_work)
-        logger.debug(
-            f"Batch created {created} rels{' (undirected)' if undirected else ''}"
-        )
+        print(f"Batch created {created} rels{' (undirected)' if undirected else ''}")
         return created
 
     # ─── Batch Node Operations ─────────────────────────────────────────────
@@ -259,7 +254,7 @@ class GraphCrud:
             return [rec["id"] for rec in tx.run(cy, props_list=properties_list)]
 
         ids = self._execute_write(_work)
-        logger.debug(f"Batch created {len(ids)} `{label}` nodes")
+        print(f"Batch created {len(ids)} `{label}` nodes")
         return ids
 
     def set_node_vector_properties_batch(
@@ -281,7 +276,7 @@ class GraphCrud:
             return tx.run(cy, vecs=vectors_data, prop=property_name).consume()
 
         summ = self._execute_write(_work)
-        logger.debug(f"Vector batch-set: {summ.counters.properties_set} properties")
+        print(f"Vector batch-set: {summ.counters.properties_set} properties")
 
     # ─── Index & Read ───────────────────────────────────────────────────────
 
@@ -314,7 +309,7 @@ class GraphCrud:
         )
         # no return value
         self._execute_write(lambda tx: tx.run(cy))
-        logger.debug(f"Ensured vector index `{index_name}` on {label}({property_name})")
+        print(f"Ensured vector index `{index_name}` on {label}({property_name})")
 
     def get_nodes_with_property(
         self, label: str, property_name: str

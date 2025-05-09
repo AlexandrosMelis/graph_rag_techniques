@@ -1,5 +1,6 @@
 # graph_rag/query_proj.py
 
+import os
 from typing import List, Tuple
 
 import numpy as np
@@ -102,9 +103,9 @@ class QGDataset(Dataset):
         return self.q_sem[idx], self.c_graph[idx]
 
 
-class QueryProj(nn.Module):
+class QueryProjectionModel(nn.Module):
     """
-    A small MLP to map BERT embeddings → graph embeddings.
+    A small MLP to map BERT embeddings to graph embeddings.
     - hidden layer with residual & LayerNorm
     - dropout for regularization
     """
@@ -143,6 +144,7 @@ def train_query_proj(
     dataset: QGDataset,
     dim_sem: int,
     dim_graph: int,
+    model_path: str,
     lr: float = 1e-3,
     weight_decay: float = 1e-4,
     batch_size: int = 64,
@@ -161,7 +163,7 @@ def train_query_proj(
     val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=2)
 
     # 2) model, optimizer, scheduler, loss
-    model = QueryProj(dim_sem, dim_graph).to(device)
+    model = QueryProjectionModel(dim_sem, dim_graph).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = ReduceLROnPlateau(
         optimizer, mode="min", factor=0.5, patience=5, verbose=True
@@ -234,7 +236,9 @@ def train_query_proj(
         if val_mse < best_val - 1e-6:
             best_val = val_mse
             no_improve = 0
-            torch.save(model.state_dict(), "best_query_proj.pt")
+            torch.save(
+                model.state_dict(), os.path.join(model_path, "best_query_proj.pt")
+            )
         else:
             no_improve += 1
             if no_improve >= patience:
@@ -242,13 +246,13 @@ def train_query_proj(
                 break
 
     # load best
-    model.load_state_dict(torch.load("best_query_proj.pt"))
+    model.load_state_dict(torch.load(os.path.join(model_path, "best_query_proj.pt")))
     return model, history
 
 
 def project_query(
     q_emb: List[float],
-    model: QueryProj,
+    model: QueryProjectionModel,
     device: str = "cpu",
 ) -> torch.Tensor:
     """

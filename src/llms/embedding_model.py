@@ -4,8 +4,6 @@ import torch
 from langchain_core.embeddings import Embeddings
 from langchain_huggingface import HuggingFaceEmbeddings
 
-from configs.config import logger
-
 
 class EmbeddingModel(Embeddings):
     """
@@ -44,18 +42,18 @@ class EmbeddingModel(Embeddings):
             model_kwargs=self.model_kwargs,
             encode_kwargs=self.encode_kwargs,
         )
-        logger.debug(f"Embedding model initialized: {self.model_name}")
+        print(f"Embedding model initialized: {self.model_name}")
 
     def _check_device(self, device: str):
         if not device:
-            logger.debug("No device specified, using CPU")
+            print("No device specified, using CPU")
         elif device == "cuda":
             if torch.cuda.is_available():
-                logger.debug("CUDA is available, using GPU")
+                print("CUDA is available, using GPU")
             else:
-                logger.debug("CUDA is not available, using CPU")
+                print("CUDA is not available, using CPU")
         elif device == "cpu":
-            logger.debug("Using CPU")
+            print("Using CPU")
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         return self.embedding_model.embed_documents(texts)

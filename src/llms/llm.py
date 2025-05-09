@@ -5,8 +5,6 @@ from langchain.chat_models import init_chat_model
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_ollama.llms import OllamaLLM
 
-from configs.config import logger
-
 
 class ChatModel:
     """
@@ -48,20 +46,20 @@ class ChatModel:
     def initialize_model(self) -> Any:
         if self.provider == "groq":
             if not os.environ.get("GROQ_API_KEY"):
-                logger.debug("GROQ_API_KEY is not set")
+                print("GROQ_API_KEY is not set")
                 raise ValueError("GROQ_API_KEY is not set")
             if self.model_name not in self.groq_models:
-                logger.debug(f"Model {self.model_name} not supported")
+                print(f"Model {self.model_name} not supported")
                 raise ValueError(f"Model {self.model_name} not supported")
             llm = init_chat_model(
                 self.model_name, model_provider=self.provider, temperature=0
             )
         elif self.provider == "google":
             if not os.environ.get("GOOGLE_API_KEY"):
-                logger.debug("GOOGLE_API_KEY is not set")
+                print("GOOGLE_API_KEY is not set")
                 raise ValueError("GOOGLE_API_KEY is not set")
             if self.model_name not in self.google_models:
-                logger.debug(f"Model {self.model_name} not supported")
+                print(f"Model {self.model_name} not supported")
                 raise ValueError(f"Model {self.model_name} not supported")
             llm = ChatGoogleGenerativeAI(
                 model=self.model_name,
@@ -72,10 +70,10 @@ class ChatModel:
             )
         elif self.provider == "ollama":
             if self.model_name not in self.local_models:
-                logger.debug(f"Model {self.model_name} not supported")
+                print(f"Model {self.model_name} not supported")
                 raise ValueError(f"Model {self.model_name} not supported")
             llm = OllamaLLM(model=self.model_name)
         else:
             raise ValueError(f"Provider {self.provider} not supported")
-        logger.debug(f"Initialized model {self.model_name}")
+        print(f"Initialized model {self.model_name}")
         return llm

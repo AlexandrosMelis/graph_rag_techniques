@@ -112,9 +112,6 @@ class ConfigPath:
     KG_DIR = os.path.join(BASE_DIR, "knowledge_graph")
     KG_CONFIG_DIR = os.path.join(KG_DIR, "configs")
 
-    # LOGS
-    LOGS_DIR = os.path.join(BASE_DIR, "logs")
-
     @classmethod
     def create_directories(cls):
         """Create each directory if it doesn't already exist."""
@@ -126,7 +123,6 @@ class ConfigPath:
             cls.INTERMEDIATE_DATA_DIR,
             cls.MODELS_DIR,
             cls.KG_DIR,
-            cls.LOGS_DIR,
             cls.OUTPUT_DIR,
         ]
 
@@ -137,4 +133,4 @@ class ConfigPath:
 # Create all directories when this file is imported
 ConfigPath.create_directories()
 ConfigEnv._validate_required_vars()
-logger = Logger.get_logger(log_file="logs")
+# logger = Logger.get_logger(log_file="logs")

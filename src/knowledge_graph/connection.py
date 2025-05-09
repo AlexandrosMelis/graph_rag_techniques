@@ -1,7 +1,5 @@
 from neo4j import GraphDatabase
 
-from configs.config import logger
-
 
 class Neo4jConnection:
     def __init__(self, uri: str, user: str, password: str, database: str):
@@ -11,9 +9,9 @@ class Neo4jConnection:
         print(f"Using database: {database}")
         try:
             self.driver.verify_connectivity()
-            logger.debug("Connection successful!")
+            print("Connection established!")
         except Exception as e:
-            logger.debug(f"Failed to connect to Neo4j: {e}")
+            print(f"Failed to connect to Neo4j: {e}")
             raise e
 
     def get_driver(self) -> GraphDatabase:
