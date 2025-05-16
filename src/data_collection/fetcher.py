@@ -5,7 +5,7 @@ import re
 from Bio import Entrez
 from tqdm import tqdm
 
-from configs.config import ConfigEnv, ConfigPath, logger
+from configs.config import ConfigEnv, ConfigPath
 from utils.utils import read_json_file, save_json_file
 
 
@@ -41,14 +41,14 @@ class PubMedArticleFetcher:
 
         # batch fetch articles from Entrez
         pmids_str = ", ".join(pmids)
-        logger.info(f"Fetching articles for total PMIDs: {len(pmids)}")
+        print(f"Fetching articles for total PMIDs: {len(pmids)}")
 
         try:
             handle = Entrez.efetch(
                 db=self._db, id=pmids_str, rettype=self._rettype, retmode=self._retmode
             )
         except Exception as e:
-            logger.error(
+            print(
                 f"Failed to fetch articles from Entrez for PMIDs: {pmids_str}. Error: {e}"
             )
             raise
@@ -59,7 +59,7 @@ class PubMedArticleFetcher:
 
         # split articles into individual articles
         articles = articles_str.strip().split("\n\n")
-        logger.info(f"Total articles fetched: {len(articles)}")
+        print(f"Total articles fetched: {len(articles)}")
 
         # extract Pubmed data from articles
         pubmed_data = self.extract_data_from_articles(articles=articles)
@@ -69,7 +69,7 @@ class PubMedArticleFetcher:
             ),
             data=pubmed_data,
         )
-        logger.info("Articles saved successfully.")
+        print("Articles saved successfully.")
         return pubmed_data
 
     def extract_pmid(self, text):
@@ -221,7 +221,7 @@ class MeshTermFetcher:
 
     def fetch_definitions(self, mesh_terms: list):
 
-        logger.debug(f"Working on file: {self._file_name}")
+        print(f"Working on file: {self._file_name}")
         mesh_definitions_file_path = os.path.join(
             ConfigPath.EXTERNAL_DATA_DIR, self._file_name
         )
@@ -247,7 +247,7 @@ class MeshTermFetcher:
                 else:
                     issued_terms.append(term)
             except Exception as e:
-                logger.error(
+                print(
                     f"Failed to retrieve MeSH definition for term: {term}. Error: {e}"
                 )
                 issued_terms.append(term)

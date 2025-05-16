@@ -1,3 +1,5 @@
+# graph_rag/query_proj_regularized.py
+
 import os
 from typing import List, Tuple
 
@@ -8,7 +10,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from neo4j import GraphDatabase
-from sklearn.metrics.pairwise import cosine_similarity
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, Dataset, random_split
 from tqdm import tqdm
@@ -101,44 +102,97 @@ class QGDataset(Dataset):
         return self.q_sem[idx], self.c_graph[idx]
 
 
-class QueryProjectionModel(nn.Module):
+class GradientReversal(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x, λ):
+        ctx.λ = λ
+        return x.view_as(x)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output.neg() * ctx.λ, None
+
+
+class QueryProjectionEncoderModel(nn.Module):
     """
-    A MLP to map BERT embeddings to graph embeddings.
-    - hidden layer with residual & LayerNorm
-    - dropout for regularization
+    Maps BERT embeddings → graph embeddings, while exposing a hidden feature
+    for the domain classifier.
     """
 
-    def __init__(
-        self,
-        dim_sem: int,
-        dim_graph: int,
-        hidden_dim: int = 256,
-        p_dropout: float = 0.2,
-    ):
+    def __init__(self, dim_sem, dim_graph, hidden_dim=512, p_dropout=0.2):
         super().__init__()
         self.lin1 = nn.Linear(dim_sem, hidden_dim)
         self.norm1 = nn.LayerNorm(hidden_dim)
         self.drop = nn.Dropout(p_dropout)
         self.lin2 = nn.Linear(hidden_dim, dim_graph)
-
         # residual if dims match
         if dim_sem == hidden_dim:
             self.res1 = nn.Identity()
         else:
             self.res1 = nn.Linear(dim_sem, hidden_dim)
 
-    def forward(self, x):
-        # first block
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        """Hidden feature before final projection."""
         h0 = x
         h = self.lin1(x)
         h = self.norm1(h)
         h = F.relu(h + self.res1(h0))
         h = self.drop(h)
-        # output
-        return self.lin2(h)
+        return h
+
+    def forward(self, x: torch.Tensor, return_hidden: bool = False):
+        h = self.encode(x)
+        out = self.lin2(h)
+        if return_hidden:
+            return out, h
+        return out
 
 
-def train_query_proj(
+class DomainClassifier(nn.Module):
+    """
+    A lightweight head that sees both hidden query features (reversed) and
+    a linear projection of the true graph embeddings, to force them to share
+    the same hidden distribution.
+    """
+
+    def __init__(self, dim_graph: int, hidden_dim: int = 256):
+        super().__init__()
+        self.graph_proj = nn.Linear(dim_graph, hidden_dim)
+        self.clf = nn.Sequential(
+            nn.Linear(hidden_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 2),
+        )
+
+    def forward(self, h_query: torch.Tensor, c_graph: torch.Tensor, λ_grl: float):
+        # h_query: [B, H], c_graph: [B, G]
+        # 1) Reverse-gradient on query features
+        h_rev = GradientReversal.apply(h_query, λ_grl)  # [B, H]
+        # 2) Project graph embeddings into same H-dim space
+        g_feat = self.graph_proj(c_graph)  # [B, H]
+        # 3) Stack domain examples
+        combined = torch.cat([h_rev, g_feat], dim=0)  # [2B, H]
+        logits = self.clf(combined)  # [2B, 2]
+        return logits
+
+
+def nt_xent_loss(
+    z_i: torch.Tensor, z_j: torch.Tensor, temperature: float = 0.07
+) -> torch.Tensor:
+    """
+    Compute NT-Xent (InfoNCE) loss between batches of projections z_i and positives z_j.
+    """
+    B = z_i.size(0)
+    # Normalize
+    z_i = F.normalize(z_i, dim=1)
+    z_j = F.normalize(z_j, dim=1)
+    # Cosine similarity matrix [B, B]
+    sim = torch.mm(z_i, z_j.t()) / temperature
+    labels = torch.arange(B, device=z_i.device)
+    return F.cross_entropy(sim, labels)
+
+
+def train_query_proj_with_domain_classifier(
     dataset: QGDataset,
     dim_sem: int,
     dim_graph: int,
@@ -150,6 +204,10 @@ def train_query_proj(
     val_ratio: float = 0.1,
     patience: int = 10,
     device: str = "cuda",
+    λ_ctr: float = 1.0,
+    λ_da: float = 0.5,
+    λ_grl: float = 1.0,
+    temperature: float = 0.07,
 ):
     # 1) split train/val
     n_val = int(len(dataset) * val_ratio)
@@ -160,76 +218,72 @@ def train_query_proj(
     )
     val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=2)
 
-    # 2) model, optimizer, scheduler, loss
-    model = QueryProjectionModel(dim_sem, dim_graph).to(device)
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    # 2) model + domain classifier + optimizer + losses + scheduler
+    model = QueryProjectionEncoderModel(dim_sem, dim_graph).to(device)
+    domain_clf = DomainClassifier(dim_graph, hidden_dim=model.lin1.out_features).to(
+        device
+    )
+    optimizer = optim.AdamW(
+        list(model.parameters()) + list(domain_clf.parameters()),
+        lr=lr,
+        weight_decay=weight_decay,
+    )
     scheduler = ReduceLROnPlateau(
         optimizer, mode="min", factor=0.5, patience=5, verbose=True
     )
-    criterion = nn.MSELoss()
+    mse_criterion = nn.MSELoss()
 
     best_val = float("inf")
     no_improve = 0
-    history = {
-        "epoch": [],
-        "train_mse": [],
-        "val_mse": [],
-        "train_cos": [],
-        "val_cos": [],
-    }
 
     for epoch in range(1, epochs + 1):
+        # —— TRAINING ——
         model.train()
-        train_losses, train_cos = [], []
+        domain_clf.train()
+        train_losses = []
+
         for q_sem, c_graph in train_loader:
             q_sem = q_sem.to(device)
             c_graph = c_graph.to(device)
 
-            pred = model(q_sem)
-            loss = criterion(pred, c_graph)
+            # forward pass
+            proj, hidden = model(q_sem, return_hidden=True)
+            # MSE
+            loss_mse = mse_criterion(proj, c_graph)
+            # contrastive
+            loss_ctr = nt_xent_loss(proj, c_graph, temperature)
+            # domain-adversarial
+            domain_logits = domain_clf(hidden, c_graph, λ_grl)
+            # labels: first B = queries → 0, next B = real graph → 1
+            B = q_sem.size(0)
+            domain_labels = torch.cat(
+                [torch.zeros(B, dtype=torch.long), torch.ones(B, dtype=torch.long)],
+                dim=0,
+            ).to(device)
+            loss_da = F.cross_entropy(domain_logits, domain_labels)
 
+            loss = loss_mse + λ_ctr * loss_ctr + λ_da * loss_da
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
             train_losses.append(loss.item())
-            # cosine similarity per batch
-            cos = (
-                cosine_similarity(pred.detach().cpu(), c_graph.cpu()).diagonal().mean()
-            )
-            train_cos.append(cos)
 
-        # eval
+        # —— VALIDATION ——
         model.eval()
+        val_losses = []
         with torch.no_grad():
-            val_losses, val_cos = [], []
             for q_sem, c_graph in val_loader:
                 q_sem = q_sem.to(device)
                 c_graph = c_graph.to(device)
-                pred = model(q_sem)
-                val_losses.append(criterion(pred, c_graph).item())
-                cos = cosine_similarity(pred.cpu(), c_graph.cpu()).diagonal().mean()
-                val_cos.append(cos)
-
-        # aggregate
-        train_mse = np.mean(train_losses)
-        val_mse = np.mean(val_losses)
-        train_c = np.mean(train_cos)
-        val_c = np.mean(val_cos)
-
-        history["epoch"].append(epoch)
-        history["train_mse"].append(train_mse)
-        history["val_mse"].append(val_mse)
-        history["train_cos"].append(train_c)
-        history["val_cos"].append(val_c)
+                proj = model(q_sem)
+                val_losses.append(mse_criterion(proj, c_graph).item())
+        val_mse = float(np.mean(val_losses))
 
         print(
-            f"[Epoch {epoch:03d}] "
-            f"Train MSE: {train_mse:.4f} | Val MSE: {val_mse:.4f} || "
-            f"Train Cos: {train_c:.4f} | Val Cos: {val_c:.4f}"
+            f"[Epoch {epoch:03d}] Train Loss: {np.mean(train_losses):.4f} | Val MSE: {val_mse:.4f}"
         )
 
-        # lr scheduling & early stopping
         scheduler.step(val_mse)
         if val_mse < best_val - 1e-6:
             best_val = val_mse
@@ -243,14 +297,14 @@ def train_query_proj(
                 print(f"No improvement for {patience} epochs → stopping early.")
                 break
 
-    # load best
+    # load best and return
     model.load_state_dict(torch.load(os.path.join(model_path, "best_query_proj.pt")))
-    return model, history
+    return model
 
 
 def project_query(
     q_emb: List[float],
-    model: QueryProjectionModel,
+    model: QueryProjectionEncoderModel,
     device: str = "cpu",
 ) -> torch.Tensor:
     """
@@ -258,8 +312,6 @@ def project_query(
     """
     model.eval()
     with torch.no_grad():
-        q = (
-            torch.tensor(q_emb, dtype=torch.float).to(device).unsqueeze(0)
-        )  # [1, dim_sem]
-        z = model(q)  # [1, dim_graph]
+        q = torch.tensor(q_emb, dtype=torch.float).to(device).unsqueeze(0)
+        z = model(q)
     return z.squeeze(0).cpu()

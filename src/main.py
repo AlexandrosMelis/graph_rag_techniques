@@ -6,15 +6,16 @@ from configs import ConfigEnv, ConfigPath
 from data_collection.dataset_constructor import DatasetConstructor
 from data_collection.fetcher import MeshTermFetcher, PubMedArticleFetcher
 from data_collection.reader import BioASQDataReader
-from evaluation.executor import collect_generated_answers, collect_retrieved_chunks
+from evaluation.executor import collect_generated_answers, run_retrieval
 from evaluation.llm_based_eval import run_evaluation_on_generated_answers
-from evaluation.non_llm_based_eval import run_evaluation_on_retrieved_chunks
+from evaluation.non_llm_based_eval import run_evaluation
 from knowledge_graph.connection import Neo4jConnection
 from knowledge_graph.crud import GraphCrud
 from knowledge_graph.loader import GraphLoader
 from llms.embedding_model import EmbeddingModel
 from llms.llm import ChatModel
-from retrieval_techniques.similarity_search import SimilaritySearchRetriever
+from retrieval_techniques.base_retriever import BaseRetriever
+from retrieval_techniques.similarity_search import BaselineSimilarityRetriever
 from utils.utils import read_json_file, save_json_file
 
 
@@ -62,7 +63,7 @@ def load_graph_data(embedding_model, graph_crud):
     graph_data = read_json_file(
         file_path=os.path.join(ConfigPath.RAW_DATA_DIR, "bioasq_graph_data.json")
     )
-    logger.info(f"Created graph data len: {len(graph_data)}")
+    print(f"Created graph data len: {len(graph_data)}")
 
     graph_loader = GraphLoader(
         data=graph_data,
@@ -74,29 +75,30 @@ def load_graph_data(embedding_model, graph_crud):
 
 def evaluate_retriever_without_llm(
     source_data: list,
-    retriever: SimilaritySearchRetriever,
-    func_args: dict,
+    retriever: BaseRetriever,
+    retriever_args: dict,
     output_dir_path: str = None,
     k_eval_values: list = [1, 3, 5, 10],
 ):
 
     save_json_file(
-        file_path=os.path.join(output_dir_path, "retrieval_args.json"), data=func_args
+        file_path=os.path.join(output_dir_path, "retriever_args.json"),
+        data=retriever_args,
     )
 
-    retrieved_chunks = collect_retrieved_chunks(
+    retrieval_results = run_retrieval(
         source_data=source_data,
         retriever=retriever,
-        func_args=func_args,
+        retriever_args=retriever_args,
         output_dir=output_dir_path,
     )
 
-    run_evaluation_on_retrieved_chunks(
-        benchmark_data=source_data,
-        retrieval_results=retrieved_chunks,
-        output_dir=output_dir_path,
+    metrics, _ = run_evaluation(
+        retrieval_results=retrieval_results,
         k_values=k_eval_values,
+        output_dir=output_dir_path,
     )
+    print(f"Evaluation metrics:\n{metrics}\n")
     print("\n\nEvaluation without LLM completed successfully!")
 
 
@@ -122,43 +124,69 @@ def evaluate_retriever_with_llm(
 
 if __name__ == "__main__":
     # required initializations
-    samples_limit = 300
-    asq_reader = BioASQDataReader(samples_limit=samples_limit)
+    samples_start = 300
+    samples_end = 600
+    asq_reader = BioASQDataReader(samples_start=samples_start, samples_end=samples_end)
     asq_data_file_path = os.path.join(ConfigPath.RAW_DATA_DIR, "bioasq_train.parquet")
     data = asq_reader.read_parquet_file(file_path=asq_data_file_path)
-    embedding_model = EmbeddingModel()
     # llm = ChatModel(
     #     provider="google", model_name="gemini-2.0-flash-lite"
     # ).initialize_model()
+    embedding_model = EmbeddingModel()
     neo4j_connection = Neo4jConnection(
         uri=ConfigEnv.NEO4J_URI,
         user=ConfigEnv.NEO4J_USER,
         password=ConfigEnv.NEO4J_PASSWORD,
         database=ConfigEnv.NEO4J_DB,
     )
-    graph_crud = GraphCrud(neo4j_connection=neo4j_connection)
+    # graph_crud = GraphCrud(neo4j_connection=neo4j_connection)
 
     #############################################
     # GRAPH PREPARATION AND LOADING
     #############################################
     # 1 step: construct the graph dataset
-    construct_graph_dataset(asq_reader=asq_reader)
+    # construct_graph_dataset(asq_reader=asq_reader)
     # 2 step: load the dataset to Neo4j db
-    load_graph_data(embedding_model=embedding_model, graph_crud=graph_crud)
+    # load_graph_data(embedding_model=embedding_model, graph_crud=graph_crud)
 
     #############################################
     # RETRIEVAL EXECUTION AND EVALUATION
     #############################################
+
     # create results folder
-    # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    # output_dir_path = os.path.join(ConfigPath.RESULTS_DIR, timestamp)
-    # os.makedirs(output_dir_path, exist_ok=True)
-    # # initialize retriever
-    # retriever = SimilaritySearchRetriever(
-    #     llm=llm,
-    #     embedding_model=embedding_model,
-    #     neo4j_connection=neo4j_connection,
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir_path = os.path.join(ConfigPath.RESULTS_DIR, timestamp)
+    os.makedirs(output_dir_path, exist_ok=True)
+
+    # initialize retriever
+
+    # gnn retriever
+    # import torch
+
+    # from graph_embeddings.query_proj_model_with_domain_classifier import (
+    #     QueryProjectionEncoderModel,
     # )
+    # from graph_embeddings.query_projection_model import QueryProjectionModel
+    # from retrieval_techniques.gnn_retriever import GNNRetriever
+
+    # proj_model = QueryProjectionEncoderModel(dim_sem=768, dim_graph=768)
+
+    # model_path = os.path.join(
+    #     ConfigPath.MODELS_DIR, "proj_model_da_20250511_211315", "best_query_proj.pt"
+    # )
+    # proj_model.load_state_dict(torch.load(model_path))
+    # proj_model.eval()
+    # retriever = GNNRetriever(
+    #     embedding_model=embedding_model,
+    #     neo4j_driver=neo4j_connection.get_driver(),
+    #     projection_model=proj_model,
+    #     device="cpu",
+    # )
+
+    retriever = BaselineSimilarityRetriever(
+        embedding_model=embedding_model,
+        neo4j_driver=neo4j_connection.get_driver(),
+    )
 
     # # Evaluate similarity search retriever without LLM
     # func_args = {
@@ -166,15 +194,15 @@ if __name__ == "__main__":
     #     "k": 10,
     #     "n_similar_contexts": 10,
     # }
-    # func_args = {"retrieval_type": "relevant_contexts", "k": 10}
+    retriever_args = {"top_k": 10}
 
-    # evaluate_retriever_without_llm(
-    #     source_data=data,
-    #     retriever=retriever,
-    #     func_args=func_args,
-    #     output_dir_path=output_dir_path,
-    #     k_eval_values=[1, 3, 5, 10],
-    # )
+    evaluate_retriever_without_llm(
+        source_data=data,
+        retriever=retriever,
+        retriever_args=retriever_args,
+        output_dir_path=output_dir_path,
+        k_eval_values=[1, 3, 5, 10],
+    )
 
     # Evaluate similarity search retriever with LLM
     # evaluate_retriever_with_llm(

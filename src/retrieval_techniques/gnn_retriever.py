@@ -1,27 +1,13 @@
-from abc import ABC, abstractmethod
 from typing import Any
 
+from neo4j import GraphDatabase
+
 from graph_embeddings.query_projection_model import project_query
+from llms.embedding_model import EmbeddingModel
+from retrieval_techniques.base_retriever import BaseRetriever
 
 
-class Retriever(ABC):
-    """
-    Abstract class for retrieving relevant contexts for a given query.
-    """
-
-    def __init__(self, embedding_model, neo4j_driver):
-        self.embedding_model = embedding_model
-        self.neo4j_driver = neo4j_driver
-
-    @abstractmethod
-    def retrieve(self, query: str, top_k: int = 10):
-        """
-        Retrieve the top_k most relevant contexts for a given query.
-        """
-        pass
-
-
-class GNNRetriever(Retriever):
+class GNNRetriever(BaseRetriever):
     """
     Uses:
       1) a BERT embedder to turn `query:str` → `q_emb: List[float]`
@@ -30,10 +16,12 @@ class GNNRetriever(Retriever):
          `context.graph_embedding` vs. this projected query vector
     """
 
+    name: str = "GNNRetriever"
+
     def __init__(
         self,
-        embedding_model: Any,
-        neo4j_driver: Any,
+        embedding_model: EmbeddingModel,
+        neo4j_driver: GraphDatabase.driver,
         projection_model: Any,
         device: str = "cpu",
     ):
@@ -53,15 +41,14 @@ class GNNRetriever(Retriever):
         # 3) run a cosine‐similarity ranking in Neo4j
         cypher = """
         WITH $q_vec AS q_emb
-        MATCH (c:CONTEXT)
-        WITH c, vector.similarity.cosine(q_emb, c.graph_embedding) AS sim
-        ORDER BY sim DESC
+        MATCH (context:CONTEXT)
+        WITH context, vector.similarity.cosine(q_emb, context.graph_embedding) AS score
+        ORDER BY score DESC
         LIMIT $k
         RETURN
-          id(c)          AS context_node_id,
-          c.pmid         AS context_pmid,
-          c.text_content AS context_text,
-          sim            AS score
+          id(context)          AS id,
+          context.pmid         AS pmid,
+          score            AS score
         """
         with self.neo4j_driver.session() as session:
             result = session.run(cypher, q_vec=q_graph_list, k=top_k)

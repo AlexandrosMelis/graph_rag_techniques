@@ -8,7 +8,7 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from tqdm import tqdm
 
-from configs.config import ConfigPath, logger
+from configs.config import ConfigPath
 from knowledge_graph.crud import GraphCrud
 from llms.embedding_model import EmbeddingModel
 from utils.utils import read_json_file
@@ -92,10 +92,10 @@ class GraphLoader:
     def _load_mesh_definitions(self, path: str) -> Dict[str, str]:
         try:
             defs = read_json_file(file_path=path)
-            logger.info(f"Loaded {len(defs)} MESH definitions from {path}")
+            print(f"Loaded {len(defs)} MESH definitions from {path}")
             return defs
         except (FileNotFoundError, json.JSONDecodeError) as e:
-            logger.error(f"Failed to load MESH definitions: {e}")
+            print(f"Failed to load MESH definitions: {e}")
             return {}
 
     def load_mesh_nodes(self) -> None:
@@ -108,7 +108,7 @@ class GraphLoader:
             for art in samp.get("articles", []):
                 terms.update(art.get("mesh_terms", []))
         if not terms:
-            logger.warning("No MESH terms found.")
+            print("No MESH terms found.")
             return
 
         sorted_terms = sorted(terms)
@@ -133,7 +133,7 @@ class GraphLoader:
         self.crud.set_node_vector_properties_batch(
             vectors_data=vecs, property_name=self.EMBEDDING_PROP
         )
-        logger.info(f"Loaded {len(node_ids)} MESH nodes.")
+        print(f"Loaded {len(node_ids)} MESH nodes.")
 
         # Ensure mesh vector index
         self.crud.ensure_vector_index(
@@ -216,7 +216,7 @@ class GraphLoader:
         Create QA_PAIR and CONTEXT nodes, set embeddings, and relationships.
         """
         if not self.mesh_node_map:
-            logger.error("Mesh nodes not loaded. Call load_mesh_nodes() first.")
+            print("Mesh nodes not loaded. Call load_mesh_nodes() first.")
             return
 
         # Prepare nodes and relationships
@@ -250,7 +250,7 @@ class GraphLoader:
         self.crud.set_node_vector_properties_batch(
             vectors_data=vec_data, property_name=self.EMBEDDING_PROP
         )
-        logger.info("Context embeddings set.")
+        print("Context embeddings set.")
 
         # Ensure context vector index
         self.crud.ensure_vector_index(
@@ -275,7 +275,7 @@ class GraphLoader:
                 )
         if rels:
             self.crud.create_relationships_batch(rels)
-        logger.info("QA and CONTEXT loading complete.")
+        print("QA and CONTEXT loading complete.")
 
     def load_similarities(self) -> None:
         """
@@ -288,7 +288,7 @@ class GraphLoader:
         ids = [r["id"] for r in records]
         embs = np.array([r[self.EMBEDDING_PROP] for r in records])
         if embs.shape[0] < 2:
-            logger.info("Not enough contexts for similarity.")
+            print("Not enough contexts for similarity.")
             return
         sim_mat = cosine_similarity(embs)
         rows, cols = np.triu_indices(len(ids), k=1)
@@ -306,7 +306,7 @@ class GraphLoader:
                 )
         if rels:
             self.crud.create_relationships_batch(rels)
-            logger.info(f"Created {len(rels)} similarity relationships.")
+            print(f"Created {len(rels)} similarity relationships.")
 
     def load_all(self, load_similarities: bool = True) -> None:
         """
@@ -317,4 +317,4 @@ class GraphLoader:
         self.load_qa_contexts()
         if load_similarities:
             self.load_similarities()
-        logger.info(f"Full load finished in {time.time()-start:.2f}s.")
+        print(f"Full load finished in {time.time()-start:.2f}s.")

@@ -4,53 +4,44 @@ from typing import Any, Literal, Tuple
 import pandas as pd
 from tqdm import tqdm
 
-from configs.config import ConfigPath
-from retrieval_techniques.similarity_search import SimilaritySearchRetriever
+from retrieval_techniques.base_retriever import BaseRetriever
 from utils.utils import save_json_file
 
 
-def collect_retrieved_chunks(
+def run_retrieval(
     source_data: list,
-    retriever: SimilaritySearchRetriever,
-    func_args: dict,
-    output_dir: str = None,
-) -> dict:
-    """Run the retriever against every sample in the source data.
-    Prepares the results for the evaluation.
-
-    Returns:
-        dict: contains the id, question and the retrieved chunks
+    retriever: BaseRetriever,
+    retriever_args: dict,
+    output_dir: str,
+) -> list:
     """
-    results = {}
-    results_for_save = {}
-    retrieval_type = func_args["retrieval_type"]
-    print(f"Retrieval type: {retrieval_type}")
-    for sample in tqdm(source_data, desc="Collecting retrieved chunks..."):
-        sample_id = sample.get("id")
-        func_args.update({"query": sample["question"]})
-        retrieved_data = retriever.retrieve_chunks(**func_args)
-        results[sample_id] = [
-            (chunk["pmid"], chunk["score"]) for chunk in retrieved_data
-        ]
+    Function responsible for running the provided retriever against the source data.
+    It saves the retrieved contexts and their metadata for further evaluation.
+    """
+    results = []
+    for example in tqdm(source_data, desc="Retrieving contexts..."):
+        example_id = example.get("id")
+        query = example.get("question")
+        true_pmids = example.get("relevant_passage_ids")
 
-        retrieved_pmids = [chunk["pmid"] for chunk in retrieved_data]
-        results_for_save[sample_id] = retrieved_pmids
+        retrieved_contexts = retriever.retrieve(query=query, **retriever_args)
+        retrieved_pmids = [context["pmid"] for context in retrieved_contexts]
+        retrieved_scores = [context["score"] for context in retrieved_contexts]
 
-    if output_dir:
-        # save results in csv
-        pmid_results = list(results_for_save.values())
+        results.append(
+            {
+                "id": example_id,
+                "query": query,
+                "true_pmids": true_pmids,
+                "retrieved_pmids": retrieved_pmids,
+                "retrieved_scores": retrieved_scores,
+            }
+        )
 
-        len_of_retrieved_results = [len(pmids) for pmids in pmid_results]
-        data = {
-            "id": list(results.keys()),
-            "retrieved_pmids": pmid_results,
-            "num_of_chunks": len_of_retrieved_results,
-        }
-        # data = {"id": list(results.keys()), "retrieved_chunks}
-        df = pd.DataFrame(data)
-        file_name = f"{retrieval_type}_chunks.csv"
-        file_path = os.path.join(output_dir, file_name)
-        df.to_csv(file_path, index=False)
+    # save results to csv
+    df = pd.DataFrame(results)
+    file_name = f"{retriever.name}_retrieval_results.csv"
+    df.to_csv(os.path.join(output_dir, file_name), index=False)
 
     return results
 

@@ -98,5 +98,5 @@ def run_gnn_training(apply_sampling: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    run_gnn_training(apply_sampling=False)
+    # run_gnn_training(apply_sampling=False)
     write_graph_embeddings_to_neo4j()

@@ -1,6 +1,5 @@
 import math
 import os
-from collections import defaultdict
 from typing import Any, Dict, List, Set, Tuple
 
 import matplotlib.pyplot as plt
@@ -30,208 +29,158 @@ class NonLLMRetrievalEvaluator:
     The calculate_confidence_intervals method estimates how reliable your metrics are by computing the variability across your test samples.
     """
 
-    def __init__(self, benchmark_data: List[Dict[str, Any]]):
-        """
-        Initialize evaluator with benchmark dataset.
+    def __init__(self):
+        self.metrics_per_k: Dict[int, Dict[str, float]] = {}
 
-        Args:
-            benchmark_data: List of dictionaries, each containing:
-                - question: str
-                - answer: str
-                - relevant_passage_ids: list of expected chunks that should be retrieved
-        """
-        self.benchmark_data = benchmark_data
-        self.metrics_results = {}
-
-    def evaluate_retrieval(
+    def calculate_evaluation_metrics(
         self,
         retrieval_results: List[Dict[str, Any]],
         k_values: List[int] = [1, 3, 5, 10],
-    ) -> Dict[str, Dict[str, float]]:
+    ) -> Dict[int, Dict[str, float]]:
         """
-        Evaluate retrieval results against benchmark data for various k values.
+        Evaluate retrieval results for each k in k_values.
 
         Args:
-            retrieval_results: List of dictionaries, each containing:
-                - question_id: ID matching a question in benchmark_data
-                - retrieved_chunks: List of tuples (passage_id, score) ordered by relevance
-            k_values: List of k values to evaluate metrics at
+            retrieval_results: List of dicts each with:
+                {
+                    'id': unique identifier,
+                    'true_pmids': List[str],
+                    'retrieved_pmids': List[str],
+                    'retrieved_scores': List[float]  # optional
+                }
+            k_values: List of k cutoffs.
 
         Returns:
-            Dictionary of metrics at each k value
+            Dictionary mapping k -> dict of metric values.
         """
-        # Create a mapping of questions to relevant passage IDs for quick lookup
-        benchmark_samples = {
-            sample["id"]: set(sample["relevant_passage_ids"])
-            for sample in self.benchmark_data
-        }
+        # Total relevant across dataset (for coverage)
+        total_relevant = sum(
+            len(example.get("true_pmids", [])) for example in retrieval_results
+        )
 
-        # Create a mapping of question IDs to retrieval results
-        retrieval_map = {
-            result["question_id"]: result["retrieved_chunks"]
-            for result in retrieval_results
-        }
-
-        # Initialize metrics dict
-        metrics = defaultdict(dict)
-
-        # Calculate metrics for each k value
+        results: Dict[int, Dict[str, float]] = {}
         for k in k_values:
-            precision_values = []
-            recall_values = []
-            f1_values = []
-            mrr_values = []
-            ndcg_values = []
-            success_values = []
-            ap_values = []  # For MAP calculation
+            precisions, recalls, f1s, mrrs, ndcgs, successes, aps = (
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+            )
+            total_found = 0
 
-            for question_id, relevant_passages in benchmark_samples.items():
-
-                if question_id not in retrieval_map:
-                    continue
-
-                retrieved = [chunk_id for chunk_id, _ in retrieval_map[question_id][:k]]
-                retrieved_set = set(retrieved)
-                relevant_set = set(relevant_passages)
+            for example in retrieval_results:
+                true_set: Set[str] = set(example.get("true_pmids", []))
+                retrieved_list: List[str] = example.get("retrieved_pmids", [])[:k]
+                retrieved_set: Set[str] = set(retrieved_list)
 
                 # Precision@k
                 precision = (
-                    len(retrieved_set.intersection(relevant_set)) / len(retrieved)
-                    if retrieved
-                    else 0
+                    len(retrieved_set & true_set) / len(retrieved_list)
+                    if retrieved_list
+                    else 0.0
                 )
-                precision_values.append(precision)
+                precisions.append(precision)
 
                 # Recall@k
                 recall = (
-                    len(retrieved_set.intersection(relevant_set)) / len(relevant_set)
-                    if relevant_set
-                    else 1.0
+                    len(retrieved_set & true_set) / len(true_set) if true_set else 1.0
                 )
-                recall_values.append(recall)
+                recalls.append(recall)
 
-                # F1 Score@k
+                # F1@k
                 f1 = (
                     2 * precision * recall / (precision + recall)
                     if (precision + recall) > 0
-                    else 0
+                    else 0.0
                 )
-                f1_values.append(f1)
+                f1s.append(f1)
 
-                # MRR
-                mrr = self._calculate_mrr(retrieved, relevant_set)
-                mrr_values.append(mrr)
+                # MRR@k
+                mrr = self._calculate_mrr(retrieved_list, true_set)
+                mrrs.append(mrr)
 
                 # nDCG@k
-                ndcg = self._calculate_ndcg(retrieved, relevant_set, k)
-                ndcg_values.append(ndcg)
+                ndcg = self._calculate_ndcg(retrieved_list, true_set, k)
+                ndcgs.append(ndcg)
 
                 # Success@k
-                success = 1 if len(retrieved_set.intersection(relevant_set)) > 0 else 0
-                success_values.append(success)
+                success = 1.0 if precision > 0 else 0.0
+                successes.append(success)
 
-                # Average Precision for MAP
-                ap = self._calculate_average_precision(retrieved, relevant_set)
-                ap_values.append(ap)
+                # AP@k (for MAP)
+                ap = self._calculate_average_precision(retrieved_list, true_set)
+                aps.append(ap)
 
-            # Store metrics for this k value
-            metrics[f"precision@{k}"] = (
-                np.mean(precision_values) if precision_values else 0
-            )
-            metrics[f"recall@{k}"] = np.mean(recall_values) if recall_values else 0
-            metrics[f"f1@{k}"] = np.mean(f1_values) if f1_values else 0
-            metrics[f"mrr@{k}"] = np.mean(mrr_values) if mrr_values else 0
-            metrics[f"ndcg@{k}"] = np.mean(ndcg_values) if ndcg_values else 0
-            metrics[f"success@{k}"] = np.mean(success_values) if success_values else 0
-            metrics[f"map@{k}"] = np.mean(ap_values) if ap_values else 0
+                # Coverage counters
+                total_found += len(retrieved_set & true_set)
 
-            # Calculate coverage across all samples
-            total_relevant = sum(
-                len(relevant) for relevant in benchmark_samples.values()
-            )
-            total_found = sum(
-                len(
-                    set(
-                        [chunk_id for chunk_id, _ in retrieval_map.get(qid, [])[:k]]
-                    ).intersection(relevant)
-                )
-                for qid, relevant in benchmark_samples.items()
-            )
-            metrics[f"coverage@{k}"] = (
-                total_found / total_relevant if total_relevant > 0 else 0
-            )
+            # Aggregated metrics
+            coverage = total_found / total_relevant if total_relevant > 0 else 0.0
+            results[k] = {
+                "precision": np.mean(precisions) if precisions else 0.0,
+                "recall": np.mean(recalls) if recalls else 0.0,
+                "f1": np.mean(f1s) if f1s else 0.0,
+                "mrr": np.mean(mrrs) if mrrs else 0.0,
+                "ndcg": np.mean(ndcgs) if ndcgs else 0.0,
+                "success": np.mean(successes) if successes else 0.0,
+                "map": np.mean(aps) if aps else 0.0,
+                "coverage": coverage,
+            }
 
-        self.metrics_results = metrics
-        return metrics
+        self.metrics_per_k = results
+        return results
 
-    def _calculate_mrr(self, retrieved: List[str], relevant_set: Set[str]) -> float:
-        """Calculate Mean Reciprocal Rank."""
-        for i, chunk_id in enumerate(retrieved):
-            if chunk_id in relevant_set:
-                return 1.0 / (i + 1)
+    def _calculate_mrr(self, retrieved: List[str], relevant: Set[str]) -> float:
+        """Mean Reciprocal Rank."""
+        for idx, doc in enumerate(retrieved, start=1):
+            if doc in relevant:
+                return 1.0 / idx
         return 0.0
 
     def _calculate_ndcg(
-        self, retrieved: List[str], relevant_set: Set[str], k: int
+        self, retrieved: List[str], relevant: Set[str], k: int
     ) -> float:
-        """Calculate Normalized Discounted Cumulative Gain."""
+        """Normalized Discounted Cumulative Gain."""
         dcg = 0.0
-        for i, chunk_id in enumerate(retrieved):
-            if chunk_id in relevant_set:
-                # Using binary relevance (1 if relevant, 0 if not)
-                dcg += 1.0 / np.log2(i + 2)  # +2 because log_2(1) = 0
-
-        # Calculate ideal DCG
-        ideal_dcg = sum(1.0 / np.log2(i + 2) for i in range(min(len(relevant_set), k)))
-
+        for i, doc in enumerate(retrieved[:k]):
+            if doc in relevant:
+                dcg += 1.0 / math.log2(i + 2)
+        ideal_dcg = sum(1.0 / math.log2(i + 2) for i in range(min(len(relevant), k)))
         return dcg / ideal_dcg if ideal_dcg > 0 else 0.0
 
     def _calculate_average_precision(
-        self, retrieved: List[str], relevant_set: Set[str]
+        self, retrieved: List[str], relevant: Set[str]
     ) -> float:
-        """Calculate Average Precision for MAP."""
+        """Average Precision for MAP."""
         hits = 0
-        sum_precisions = 0.0
-
-        for i, chunk_id in enumerate(retrieved):
-            if chunk_id in relevant_set:
+        sum_prec = 0.0
+        for idx, doc in enumerate(retrieved, start=1):
+            if doc in relevant:
                 hits += 1
-                precision_at_i = hits / (i + 1)
-                sum_precisions += precision_at_i
-
-        return sum_precisions / len(relevant_set) if relevant_set else 0.0
+                sum_prec += hits / idx
+        return sum_prec / len(relevant) if relevant else 0.0
 
     def generate_summary_report(self, output_path: str = None) -> pd.DataFrame:
         """
-        Generate a summary report of all metrics.
+        Generate a pivot table report of metrics_per_k.
 
         Args:
-            output_path: Optional path to save CSV file
+            output_path: if provided, save CSV to this path.
 
         Returns:
-            DataFrame with metrics summary
+            Pandas DataFrame (metrics x k values).
         """
-        if not self.metrics_results:
-            raise ValueError(
-                "No evaluation results available. Run evaluate_retrieval first."
-            )
+        if not self.metrics_per_k:
+            raise ValueError("Run evaluate_retrieval first to populate metrics_per_k.")
 
-        # Convert metrics to DataFrame for easier visualization
-        metrics_df = pd.DataFrame([self.metrics_results])
-        metrics_df = metrics_df.T.reset_index()
-        metrics_df.columns = ["Metric", "Value"]
-
-        # Extract k value and base metric name
-        metrics_df[["Metric", "k"]] = metrics_df["Metric"].str.split("@", expand=True)
-        metrics_df["k"] = metrics_df["k"].astype(int)
-
-        # Pivot to get metrics by k value
-        pivot_df = metrics_df.pivot(index="Metric", columns="k", values="Value")
-
+        df = pd.DataFrame(self.metrics_per_k).T
+        df.index.name = "k"
         if output_path:
-            pivot_df.to_csv(output_path)
-
-        return pivot_df
+            df.to_csv(output_path)
+        return df
 
     def plot_metrics(
         self,
@@ -240,375 +189,150 @@ class NonLLMRetrievalEvaluator:
         output_path: str = None,
     ) -> None:
         """
-        Plot metrics against k values.
-
-        Args:
-            metrics_to_plot: List of metrics to plot (e.g., ['precision', 'recall'])
-            figsize: Figure size as (width, height)
-            output_file: Optional path to save plot
+        Plot selected metrics across k values.
         """
-        if not self.metrics_results:
-            raise ValueError(
-                "No evaluation results available. Run evaluate_retrieval first."
-            )
+        if not self.metrics_per_k:
+            raise ValueError("Run evaluate_retrieval first to populate metrics_per_k.")
 
-        # Convert metrics to DataFrame
-        metrics_df = pd.DataFrame([self.metrics_results])
-        metrics_df = metrics_df.T.reset_index()
-        metrics_df.columns = ["Metric", "Value"]
+        df = pd.DataFrame(self.metrics_per_k).T
+        ks = df.index.values
+        to_plot = metrics_to_plot or [c for c in df.columns if c != "coverage"]
 
-        # Extract k value and base metric name
-        metrics_df[["Base", "k"]] = metrics_df["Metric"].str.split("@", expand=True)
-        metrics_df["k"] = metrics_df["k"].astype(int)
-
-        # Filter metrics to plot if specified
-        if metrics_to_plot:
-            metrics_df = metrics_df[metrics_df["Base"].isin(metrics_to_plot)]
-
-        # Get unique k values and base metrics
-        k_values = sorted(metrics_df["k"].unique())
-        base_metrics = metrics_df["Base"].unique()
-
-        # Create plot
-        fig, ax = plt.subplots(figsize=figsize)
-
-        for metric in base_metrics:
-            metric_data = metrics_df[metrics_df["Base"] == metric]
-            ax.plot(metric_data["k"], metric_data["Value"], marker="o", label=metric)
-
-        ax.set_xlabel("k value")
-        ax.set_ylabel("Score")
-        ax.set_title("Retrieval Metrics at Different k Values")
-        ax.legend()
-        ax.grid(True, linestyle="--", alpha=0.7)
-
-        # Set x-ticks to k values
-        ax.set_xticks(k_values)
-
+        plt.figure(figsize=figsize)
+        for metric in to_plot:
+            plt.plot(ks, df[metric], marker="o", label=metric)
+        plt.xlabel("k")
+        plt.ylabel("Score")
+        plt.title("Retrieval Metrics")
+        plt.xticks(ks)
+        plt.grid(alpha=0.3, linestyle="--")
+        plt.legend()
+        plt.tight_layout()
         if output_path:
             plt.savefig(output_path, bbox_inches="tight")
-
-        plt.tight_layout()
         plt.show()
 
     def compare_models(
         self,
-        model_results: Dict[str, Dict[str, float]],
-        metrics_to_compare: List[str] = None,
-        k_value: int = 10,
+        model_results: Dict[str, Dict[int, Dict[str, float]]],
+        metric: str = "precision",
+        k: int = 10,
         figsize: Tuple[int, int] = (12, 8),
         output_file: str = None,
     ) -> pd.DataFrame:
         """
-        Compare different models based on their metrics.
+        Compare a single metric at a given k across models.
 
         Args:
-            model_results: Dictionary mapping model names to their metric results
-            metrics_to_compare: List of metrics to compare (e.g., ['precision@10', 'recall@10'])
-            k_value: k value to use for comparison
-            figsize: Figure size as (width, height)
-            output_file: Optional path to save plot
-
-        Returns:
-            DataFrame with model comparison
+            model_results: {model_name: {k: {metric: value}}}
+            metric: which metric to compare
+            k: k value
         """
-        # Create comparison DataFrame
-        models = list(model_results.keys())
+        data = []
+        for model, res in model_results.items():
+            val = res.get(k, {}).get(metric, 0.0)
+            data.append({"model": model, metric: val})
+        df = pd.DataFrame(data)
 
-        if not metrics_to_compare:
-            # Use all metrics with specified k value
-            metrics_to_compare = [
-                key for key in model_results[models[0]].keys() if f"@{k_value}" in key
-            ]
-
-        # Create comparison data
-        comparison_data = []
-        for metric in metrics_to_compare:
-            metric_values = [model_results[model].get(metric, 0) for model in models]
-            comparison_data.append(
-                {
-                    "Metric": metric,
-                    **{model: value for model, value in zip(models, metric_values)},
-                }
-            )
-
-        comparison_df = pd.DataFrame(comparison_data)
-
-        # Plot comparison
-        fig, ax = plt.subplots(figsize=figsize)
-
-        x = np.arange(len(metrics_to_compare))
-        width = 0.8 / len(models)
-
-        for i, model in enumerate(models):
-            values = [row[model] for row in comparison_data]
-            ax.bar(x + i * width - 0.4 + width / 2, values, width, label=model)
-
-        ax.set_ylabel("Score")
-        ax.set_title(f"Model Comparison at k={k_value}")
-        ax.set_xticks(x)
-        ax.set_xticklabels([metric.split("@")[0] for metric in metrics_to_compare])
-        ax.legend()
-
+        # Plot
+        plt.figure(figsize=figsize)
+        plt.bar(df["model"], df[metric])
+        plt.ylabel(metric)
+        plt.title(f"Model Comparison on {metric}@{k}")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
         if output_file:
             plt.savefig(output_file, bbox_inches="tight")
-
-        plt.tight_layout()
         plt.show()
-
-        return comparison_df
+        return df
 
     def calculate_confidence_intervals(
         self,
         retrieval_results: List[Dict[str, Any]],
-        k_value: int = 10,
+        k: int = 10,
         confidence: float = 0.95,
     ) -> Dict[str, Dict[str, float]]:
         """
-        Calculate confidence intervals for metrics using bootstrap resampling.
+        Calculate approximate confidence intervals for each metric at specified k.
 
         Args:
-            retrieval_results: List of dictionaries with retrieval results
-            k_value: k value to use for metrics
-            confidence: Confidence level (e.g., 0.95 for 95% confidence)
-
-        Returns:
-            Dictionary of metrics with their confidence intervals
+            retrieval_results: same format as evaluate_retrieval
+            k: cutoff
+            confidence: 0.95, 0.90, or 0.99
         """
-        # Create a mapping of questions to relevant passage IDs
-        question_to_relevant = {
-            i: set(sample["relevant_passage_ids"])
-            for i, sample in enumerate(self.benchmark_data)
+        # Collect per-example metrics
+        sample_metrics: Dict[str, List[float]] = {
+            "precision": [],
+            "recall": [],
+            "f1": [],
+            "mrr": [],
+            "ndcg": [],
+            "success": [],
+            "ap": [],
         }
-
-        # Create a mapping of question IDs to retrieval results
-        retrieval_map = {
-            result["question_id"]: result["retrieved_chunks"]
-            for result in retrieval_results
-        }
-
-        # Calculate metrics for each sample
-        sample_metrics = []
-
-        for question_id, relevant_passages in question_to_relevant.items():
-            if question_id not in retrieval_map:
-                continue
-
-            retrieved = [
-                chunk_id for chunk_id, _ in retrieval_map[question_id][:k_value]
-            ]
+        for example in retrieval_results:
+            true_set = set(example.get("true_pmids", []))
+            retrieved = example.get("retrieved_pmids", [])[:k]
             retrieved_set = set(retrieved)
-            relevant_set = set(relevant_passages)
+            p = len(retrieved_set & true_set) / len(retrieved) if retrieved else 0.0
+            r = len(retrieved_set & true_set) / len(true_set) if true_set else 1.0
+            f1 = (2 * p * r / (p + r)) if (p + r) > 0 else 0.0
+            mrr = self._calculate_mrr(retrieved, true_set)
+            ndcg = self._calculate_ndcg(retrieved, true_set, k)
+            success = 1.0 if p > 0 else 0.0
+            ap = self._calculate_average_precision(retrieved, true_set)
 
-            # Calculate sample-level metrics
-            sample_metric = {}
+            sample_metrics["precision"].append(p)
+            sample_metrics["recall"].append(r)
+            sample_metrics["f1"].append(f1)
+            sample_metrics["mrr"].append(mrr)
+            sample_metrics["ndcg"].append(ndcg)
+            sample_metrics["success"].append(success)
+            sample_metrics["ap"].append(ap)
 
-            # Precision@k
-            sample_metric["precision"] = (
-                len(retrieved_set.intersection(relevant_set)) / len(retrieved)
-                if retrieved
-                else 0
-            )
+        # z-scores
+        z_map = {0.90: 1.645, 0.95: 1.96, 0.99: 2.576}
+        z = z_map.get(confidence, 1.96)
 
-            # Recall@k
-            sample_metric["recall"] = (
-                len(retrieved_set.intersection(relevant_set)) / len(relevant_set)
-                if relevant_set
-                else 1.0
-            )
-
-            # F1 Score@k
-            sample_metric["f1"] = (
-                2
-                * sample_metric["precision"]
-                * sample_metric["recall"]
-                / (sample_metric["precision"] + sample_metric["recall"])
-                if (sample_metric["precision"] + sample_metric["recall"]) > 0
-                else 0
-            )
-
-            # MRR
-            sample_metric["mrr"] = self._calculate_mrr(retrieved, relevant_set)
-
-            # nDCG@k
-            sample_metric["ndcg"] = self._calculate_ndcg(
-                retrieved, relevant_set, k_value
-            )
-
-            # Success@k
-            sample_metric["success"] = (
-                1 if len(retrieved_set.intersection(relevant_set)) > 0 else 0
-            )
-
-            # AP for MAP
-            sample_metric["ap"] = self._calculate_average_precision(
-                retrieved, relevant_set
-            )
-
-            sample_metrics.append(sample_metric)
-
-        # Convert to DataFrame for easier calculation
-        metrics_df = pd.DataFrame(sample_metrics)
-
-        # Calculate mean and standard error for confidence intervals
-        confidence_intervals = {}
-
-        for metric in metrics_df.columns:
-            mean_value = metrics_df[metric].mean()
-            std_error = sem(metrics_df[metric])
-
-            # t-value for the given confidence level and degrees of freedom
-            # Using z-score approximation for large sample sizes
-            z_score = 1.96  # For 95% confidence
-            if confidence != 0.95:
-                # Approximate z-score for other confidence levels
-                z_score = -math.inf
-                if confidence == 0.90:
-                    z_score = 1.645
-                elif confidence == 0.99:
-                    z_score = 2.576
-
-            margin_of_error = z_score * std_error
-
-            confidence_intervals[f"{metric}@{k_value}"] = {
-                "mean": mean_value,
-                "lower_bound": max(0, mean_value - margin_of_error),
-                "upper_bound": min(1, mean_value + margin_of_error),
+        ci: Dict[str, Dict[str, float]] = {}
+        for metric_name, values in sample_metrics.items():
+            arr = np.array(values)
+            mean = arr.mean()
+            se = sem(arr) if len(arr) > 1 else 0.0
+            moe = z * se
+            ci[f"{metric_name}@{k}"] = {
+                "mean": mean,
+                "lower_bound": max(0.0, mean - moe),
+                "upper_bound": min(1.0, mean + moe),
             }
-
-        return confidence_intervals
-
-
-def format_retrieval_results(
-    raw_results: Dict[str, List[Tuple[str, float]]],
-) -> List[Dict[str, Any]]:
-    """
-    Format raw retrieval results into the structure expected by the evaluator.
-
-    Args:
-        raw_results: Dictionary mapping question IDs to lists of (passage_id, score) tuples
-
-    Returns:
-        List of formatted retrieval results
-    """
-    formatted_results = []
-    for question_id, retrieved_chunks in raw_results.items():
-        formatted_results.append(
-            {"question_id": question_id, "retrieved_chunks": retrieved_chunks}
-        )
-    return formatted_results
+        return ci
 
 
-def run_evaluation_on_retrieved_chunks(
-    benchmark_data: List[Dict[str, Any]],
-    retrieval_results: Dict[str, List[Tuple[str, float]]],
+def run_evaluation(
+    retrieval_results: List[Dict[str, Any]],
     k_values: List[int] = [1, 3, 5, 10],
     output_dir: str = None,
-) -> Tuple[Dict[str, float], NonLLMRetrievalEvaluator]:
+) -> Tuple[Dict[int, Dict[str, float]], NonLLMRetrievalEvaluator]:
     """
-    Convenience function to run evaluation in one step.
-
-    Args:
-        benchmark_data: List of benchmark data samples
-        retrieval_results: Dictionary mapping question IDs to lists of (passage_id, score) tuples
-        k_values: List of k values to evaluate
-
-    Returns:
-        Dictionary of metrics
+    Function to run evaluation and optionally save results.
     """
-    # Format results
-    formatted_results = format_retrieval_results(retrieval_results)
+    evaluator = NonLLMRetrievalEvaluator()
+    metrics = evaluator.calculate_evaluation_metrics(retrieval_results, k_values)
 
-    # Initialize evaluator
-    evaluator = NonLLMRetrievalEvaluator(benchmark_data)
-
-    # Run evaluation
-    metrics = evaluator.evaluate_retrieval(formatted_results, k_values)
-
-    # Save metrics
     if output_dir:
-        # save metrics json
-        metrics_file_name = "non_llm_based_metrics.json"
+        os.makedirs(output_dir, exist_ok=True)
+        # save metrics JSON
         save_json_file(
-            file_path=os.path.join(output_dir, metrics_file_name), data=metrics
+            file_path=os.path.join(output_dir, "retrieval_metrics.json"),
+            data=metrics,
         )
-
-        # save summary report csv
-        report_file_name = "non_llm_based_metrics_summary_report.csv"
-        output_path = os.path.join(output_dir, report_file_name)
-        evaluator.generate_summary_report(output_path=output_path)
-
-        # save plots
-        plot_file_name = "non_llm_based_plot.png"
-        output_path = os.path.join(output_dir, plot_file_name)
-        evaluator.plot_metrics(output_path=output_path)
+        # save CSV summary
+        evaluator.generate_summary_report(
+            output_path=os.path.join(output_dir, "retrieval_metrics_summary.csv")
+        )
+        # save plot
+        evaluator.plot_metrics(
+            output_path=os.path.join(output_dir, "retrieval_metrics_plot.png")
+        )
 
     return metrics, evaluator
-
-
-# Example usage
-if __name__ == "__main__":
-    # Example benchmark data
-    benchmark_data = [
-        {
-            "id": 0,
-            "question": "What is GraphRAG?",
-            "answer": "GraphRAG is a technique that combines graph databases with retrieval augmented generation.",
-            "relevant_passage_ids": ["p1", "p2", "p3"],
-        },
-        {
-            "id": 1,
-            "question": "How does GraphRAG improve over traditional RAG?",
-            "answer": "It leverages graph structure for better context retrieval.",
-            "relevant_passage_ids": ["p4", "p5"],
-        },
-    ]
-
-    # Example retrieval results (would come from your GraphRAG system)
-    retrieval_results = {
-        0: [
-            {"pmid": "p1", "score": 0.95},
-            {"pmid": "p3", "score": 0.85},
-            {"pmid": "p2", "score": 0.75},
-            {"pmid": "p6", "score": 0.65},
-            {"pmid": "p7", "score": 0.55},
-        ],
-        1: [
-            {"pmid": "p6", "score": 0.90},
-            {"pmid": "p4", "score": 0.85},
-            {"pmid": "p8", "score": 0.70},
-            {"pmid": "p5", "score": 0.65},
-            {"pmid": "p9", "score": 0.60},
-        ],
-    }
-
-    # Run evaluation
-    metrics, evaluator = run_evaluation_on_retrieved_chunks(
-        benchmark_data, retrieval_results
-    )
-
-    # Generate summary report
-    report = evaluator.generate_summary_report()
-    print(report)
-
-    # Plot metrics
-    evaluator.plot_metrics()
-
-    # Compare different models (example)
-    model1_results = metrics
-    # Assume model2_results would be from another run
-    model2_results = {k: v * 0.9 for k, v in metrics.items()}  # Simulated second model
-
-    evaluator.compare_models(
-        {"GraphRAG Model 1": model1_results, "GraphRAG Model 2": model2_results}
-    )
-
-    # Calculate confidence intervals
-    confidence_intervals = evaluator.calculate_confidence_intervals(
-        format_retrieval_results(retrieval_results)
-    )
-    print("\nConfidence Intervals:")
-    for metric, values in confidence_intervals.items():
-        print(
-            f"{metric}: {values['mean']:.3f} [{values['lower_bound']:.3f}, {values['upper_bound']:.3f}]"
-        )

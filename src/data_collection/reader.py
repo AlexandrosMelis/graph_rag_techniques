@@ -1,77 +1,60 @@
-import json
-import os
+from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-from configs.config import ConfigPath, logger
-
-
-class PQADataReader:
-    def __init__(self, file_path):
-        self.file_path = file_path
-        self.data: dict = {}
-        self.pmids: list = []
-        self._read_file()
-
-    def _read_file(self):
-        try:
-            with open(self.file_path, "r", encoding="utf-8") as file:
-                self.data = json.load(file)
-                if not self.data:
-                    raise ValueError("Metadata json file cannot be empty!")
-                self.pmids = list(self.data.keys())
-                if not self.pmids:
-                    raise ValueError("PMIDs not found!")
-                logger.debug("External metadata file loaded successfully!")
-        except FileNotFoundError:
-            logger.error(f"File not found: {self.file_path}")
-        except json.JSONDecodeError:
-            logger.error(f"Error decoding JSON from file: {self.file_path}")
-        except ValueError as ve:
-            logger.error(f"Value error: {ve}")
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}")
-
-    def get_pmids(self) -> list:
-        return self.pmids
-
 
 class BioASQDataReader:
-
-    def __init__(self, samples_limit: int = 1000):
-        # os.path.join(ConfigPath.RAW_DATA_DIR,"train-00000-of-00001.parquet")
+    def __init__(
+        self,
+        samples_start: int = 0,
+        samples_end: Optional[int] = None,
+    ):
+        """
+        :param samples_start: zero‐based index of the first row to include
+        :param samples_end: zero‐based index to stop before (None = all remaining rows)
+        """
         self.splits = {
             "train": "question-answer-passages/train-00000-of-00001.parquet",
             "test": "question-answer-passages/test-00000-of-00001.parquet",
         }
-        self.samples_limit = samples_limit
+        self.samples_start = samples_start
+        self.samples_end = samples_end
 
     def read_parquet_file(self, file_path: str) -> list:
+        # try local, else fall back to HF
         try:
             self.df = pd.read_parquet(file_path)
         except Exception as e:
-            logger.error(f"Error reading parquet file: {e}")
-            logger.debug("Downloading the dataset from Hugging Face Datasets...")
+            print(f"Error reading {file_path!r}: {e}")
+            print("Downloading the dataset from Hugging Face Datasets...")
             self.df = pd.read_parquet(
                 "hf://datasets/enelpol/rag-mini-bioasq/" + self.splits["train"]
             )
 
-        logger.info(f"Limiting the number of rows to {self.samples_limit}...")
-        self.df = self.df[: self.samples_limit]
-        logger.info(f"Data file loaded with shape: {self.df.shape}")
-        # convert column 'relevant_passage_ids' from array[int] -> list[str]
+        # slice between start/end
+        if self.samples_end is not None:
+            print(
+                f"Selecting rows from {self.samples_start} to {self.samples_end} (exclusive)..."
+            )
+        else:
+            print(f"Selecting rows from {self.samples_start} to end...")
+        self.df = self.df[self.samples_start : self.samples_end]
+
+        print(f"Data file loaded with shape: {self.df.shape}")
+
+        # convert 'relevant_passage_ids' arrays to list[str]
         self.df["relevant_passage_ids"] = self.df["relevant_passage_ids"].apply(
-            lambda cell_value: (
-                cell_value.astype(str).tolist()
-                if isinstance(cell_value, np.ndarray)
-                else cell_value
+            lambda cell: (
+                cell.astype(str).tolist() if isinstance(cell, np.ndarray) else cell
             )
         )
-        records = self.df.to_dict(orient="records")
-        return records
+
+        return self.df.to_dict(orient="records")
 
     def get_distinct_pmids(self) -> list:
-        int_pmids = list(self.df["relevant_passage_ids"].explode().unique())
-        pmids = [str(pmid) for pmid in int_pmids]
-        return pmids
+        """
+        Explodes the list of passage‐IDs and returns unique PMIDs as strings.
+        """
+        int_pmids = self.df["relevant_passage_ids"].explode().unique()
+        return [str(p) for p in int_pmids]
