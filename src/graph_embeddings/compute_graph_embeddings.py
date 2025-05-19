@@ -14,7 +14,7 @@ from graph_embeddings.data_extraction import (
     fetch_node_features,
     fetch_topology,
 )
-from graph_embeddings.model import GraphEncoder
+from graph_embeddings.graph_encoder_model import GraphEncoder
 
 
 def load_model(
@@ -102,7 +102,7 @@ def write_graph_embeddings_to_neo4j():
     hidden_channels = 256
     out_channels = 768
     model_path = os.path.join(
-        ConfigPath.MODELS_DIR, "20250505_221824", "graphsage_encoder_pred.pt"
+        ConfigPath.MODELS_DIR, "gnn_20250516_223235", "graphsage_encoder_pred.pt"
     )
     encoder = load_model(
         in_channels,

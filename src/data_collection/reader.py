@@ -24,22 +24,24 @@ class BioASQDataReader:
     def read_parquet_file(self, file_path: str) -> list:
         # try local, else fall back to HF
         try:
+            print(f"Reading {file_path!r}...")
             self.df = pd.read_parquet(file_path)
         except Exception as e:
             print(f"Error reading {file_path!r}: {e}")
-            print("Downloading the dataset from Hugging Face Datasets...")
-            self.df = pd.read_parquet(
-                "hf://datasets/enelpol/rag-mini-bioasq/" + self.splits["train"]
-            )
+            # print("Downloading the dataset from Hugging Face Datasets...")
+            # self.df = pd.read_parquet(
+            #     "hf://datasets/enelpol/rag-mini-bioasq/" + self.splits["train"]
+            # )
 
         # slice between start/end
         if self.samples_end is not None:
             print(
                 f"Selecting rows from {self.samples_start} to {self.samples_end} (exclusive)..."
             )
+            self.df = self.df[self.samples_start : self.samples_end]
         else:
             print(f"Selecting rows from {self.samples_start} to end...")
-        self.df = self.df[self.samples_start : self.samples_end]
+            self.df = self.df[self.samples_start :]
 
         print(f"Data file loaded with shape: {self.df.shape}")
 

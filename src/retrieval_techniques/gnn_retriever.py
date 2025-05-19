@@ -7,16 +7,16 @@ from llms.embedding_model import EmbeddingModel
 from retrieval_techniques.base_retriever import BaseRetriever
 
 
-class GNNRetriever(BaseRetriever):
+class GraphEmbeddingSimilarityRetriever(BaseRetriever):
     """
     Uses:
-      1) a BERT embedder to turn `query:str` → `q_emb: List[float]`
+      1) a BERT embedding model to turn `query:str` → `q_emb: List[float]`
       2) your trained `projection_model` to map `q_emb` → graph-space vector
       3) a GDS cosine similarity call in Neo4j to rank all CONTEXT nodes by their
          `context.graph_embedding` vs. this projected query vector
     """
 
-    name: str = "GNNRetriever"
+    name: str = "Graph Embedding Similarity Search"
 
     def __init__(
         self,

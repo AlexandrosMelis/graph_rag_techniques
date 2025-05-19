@@ -13,13 +13,14 @@ from knowledge_graph.connection import Neo4jConnection
 from knowledge_graph.crud import GraphCrud
 from knowledge_graph.loader import GraphLoader
 from llms.embedding_model import EmbeddingModel
-from llms.llm import ChatModel
 from retrieval_techniques.base_retriever import BaseRetriever
-from retrieval_techniques.similarity_search import BaselineSimilarityRetriever
+from retrieval_techniques.similarity_search import BaselineBERTSimilarityRetriever
 from utils.utils import read_json_file, save_json_file
 
 
-def construct_graph_dataset(asq_reader: BioASQDataReader):
+def construct_graph_dataset(
+    asq_reader: BioASQDataReader, file_name: str = "bioasq_test.parquet"
+):
     """
     The function aims to construct the dataset for the graph database.
     The following steps are performed:
@@ -32,7 +33,7 @@ def construct_graph_dataset(asq_reader: BioASQDataReader):
     article_fetcher = PubMedArticleFetcher()
 
     # 1. Read the BIOASQ parquet data file
-    asq_data_file_path = os.path.join(ConfigPath.RAW_DATA_DIR, "bioasq_train.parquet")
+    asq_data_file_path = os.path.join(ConfigPath.RAW_DATA_DIR, file_name)
     asq_data = asq_reader.read_parquet_file(file_path=asq_data_file_path)
     pmids_for_fetch = asq_reader.get_distinct_pmids()
 
@@ -97,8 +98,9 @@ def evaluate_retriever_without_llm(
         retrieval_results=retrieval_results,
         k_values=k_eval_values,
         output_dir=output_dir_path,
+        retriever_name=retriever.name,
     )
-    print(f"Evaluation metrics:\n{metrics}\n")
+    print(f"Evaluation metrics for {retriever.name}:\n{metrics}\n")
     print("\n\nEvaluation without LLM completed successfully!")
 
 
@@ -124,10 +126,10 @@ def evaluate_retriever_with_llm(
 
 if __name__ == "__main__":
     # required initializations
-    samples_start = 300
-    samples_end = 600
-    asq_reader = BioASQDataReader(samples_start=samples_start, samples_end=samples_end)
-    asq_data_file_path = os.path.join(ConfigPath.RAW_DATA_DIR, "bioasq_train.parquet")
+    samples_start = 0
+    # samples_end = 700
+    asq_reader = BioASQDataReader(samples_start=samples_start)
+    asq_data_file_path = os.path.join(ConfigPath.RAW_DATA_DIR, "bioasq_test.parquet")
     data = asq_reader.read_parquet_file(file_path=asq_data_file_path)
     # llm = ChatModel(
     #     provider="google", model_name="gemini-2.0-flash-lite"
@@ -145,7 +147,7 @@ if __name__ == "__main__":
     # GRAPH PREPARATION AND LOADING
     #############################################
     # 1 step: construct the graph dataset
-    # construct_graph_dataset(asq_reader=asq_reader)
+    # construct_graph_dataset(asq_reader=asq_reader, file_name="bioasq_test.parquet")
     # 2 step: load the dataset to Neo4j db
     # load_graph_data(embedding_model=embedding_model, graph_crud=graph_crud)
 
@@ -153,37 +155,31 @@ if __name__ == "__main__":
     # RETRIEVAL EXECUTION AND EVALUATION
     #############################################
 
-    # create results folder
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir_path = os.path.join(ConfigPath.RESULTS_DIR, timestamp)
-    os.makedirs(output_dir_path, exist_ok=True)
-
     # initialize retriever
 
     # gnn retriever
+
     # import torch
 
     # from graph_embeddings.query_proj_model_with_domain_classifier import (
     #     QueryProjectionEncoderModel,
     # )
-    # from graph_embeddings.query_projection_model import QueryProjectionModel
-    # from retrieval_techniques.gnn_retriever import GNNRetriever
+    # from retrieval_techniques.gnn_retriever import GraphEmbeddingSimilarityRetriever
 
     # proj_model = QueryProjectionEncoderModel(dim_sem=768, dim_graph=768)
-
     # model_path = os.path.join(
-    #     ConfigPath.MODELS_DIR, "proj_model_da_20250511_211315", "best_query_proj.pt"
+    #     ConfigPath.MODELS_DIR, "proj_model_da_20250516_230821", "best_query_proj.pt"
     # )
     # proj_model.load_state_dict(torch.load(model_path))
     # proj_model.eval()
-    # retriever = GNNRetriever(
+    # retriever = GraphEmbeddingSimilarityRetriever(
     #     embedding_model=embedding_model,
     #     neo4j_driver=neo4j_connection.get_driver(),
     #     projection_model=proj_model,
     #     device="cpu",
     # )
 
-    retriever = BaselineSimilarityRetriever(
+    retriever = BaselineBERTSimilarityRetriever(
         embedding_model=embedding_model,
         neo4j_driver=neo4j_connection.get_driver(),
     )
@@ -195,6 +191,13 @@ if __name__ == "__main__":
     #     "n_similar_contexts": 10,
     # }
     retriever_args = {"top_k": 10}
+
+    # create results folder
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir_path = os.path.join(
+        ConfigPath.RESULTS_DIR, f"{retriever.name}_{timestamp}"
+    )
+    os.makedirs(output_dir_path, exist_ok=True)
 
     evaluate_retriever_without_llm(
         source_data=data,

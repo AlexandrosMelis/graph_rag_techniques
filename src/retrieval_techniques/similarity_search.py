@@ -11,10 +11,10 @@ from retrieval_techniques.base_retriever import BaseRetriever
 # ======================================================================
 
 
-class BaselineSimilarityRetriever(BaseRetriever):
+class BaselineBERTSimilarityRetriever(BaseRetriever):
     """Cosine similarity over all CONTEXT nodes' BERT embeddings (baseline)."""
 
-    name = "baseline_similarity"
+    name = "Baseline BERT Embedding Similarity Search"
 
     def retrieve(self, query: str, top_k: int = 10, **kwargs):
         query_embedding = self.embedding_model.embed_query(query)
@@ -76,7 +76,7 @@ class MeshSubgraphSimilarityRetriever(BaseRetriever):
 RETRIEVER_REGISTRY = {
     cls.name: cls
     for cls in [
-        BaselineSimilarityRetriever,
+        BaselineBERTSimilarityRetriever,
         ExpandNHopsSimilarityRetriever,
         MeshSubgraphSimilarityRetriever,
     ]

@@ -1,13 +1,143 @@
 import math
 import os
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy.stats import sem
 
 from utils.utils import save_json_file
+
+
+def precision_at_k(
+    true_lists: List[List[str]], pred_lists: List[List[str]], k: int
+) -> float:
+    precisions = []
+    for true, pred in zip(true_lists, pred_lists):
+        top_k = pred[:k]
+        if not top_k:
+            precisions.append(0.0)
+        else:
+            relevant = sum(1 for p in top_k if p in true)
+            precisions.append(relevant / k)
+    return float(np.mean(precisions))
+
+
+def recall_at_k(
+    true_lists: List[List[str]], pred_lists: List[List[str]], k: int
+) -> float:
+    recalls = []
+    for true, pred in zip(true_lists, pred_lists):
+        top_k = pred[:k]
+        recalls.append(
+            (sum(1 for p in top_k if p in true) / len(true)) if true else 0.0
+        )
+    return float(np.mean(recalls))
+
+
+def f1_at_k(true_lists: List[List[str]], pred_lists: List[List[str]], k: int) -> float:
+    f1s = []
+    for true, pred in zip(true_lists, pred_lists):
+        top_k = pred[:k]
+        tp = sum(1 for p in top_k if p in true)
+        precision = tp / k if k > 0 else 0.0
+        recall = tp / len(true) if true else 0.0
+        f1s.append(
+            2 * precision * recall / (precision + recall)
+            if (precision + recall) > 0
+            else 0.0
+        )
+    return float(np.mean(f1s))
+
+
+def mean_reciprocal_rank(
+    true_lists: List[List[str]], pred_lists: List[List[str]], k: int
+) -> float:
+    rr = []
+    for true, pred in zip(true_lists, pred_lists):
+        score = 0.0
+        for idx, p in enumerate(pred[:k], start=1):
+            if p in true:
+                score = 1.0 / idx
+                break
+        rr.append(score)
+    return float(np.mean(rr))
+
+
+def ndcg_at_k(
+    true_lists: List[List[str]], pred_lists: List[List[str]], k: int
+) -> float:
+    ndcgs = []
+    for true, pred in zip(true_lists, pred_lists):
+        dcg = 0.0
+        for i, p in enumerate(pred[:k], start=1):
+            rel = 1 if p in true else 0
+            dcg += (2**rel - 1) / math.log2(i + 1)
+        ideal_dcg = sum(
+            (2**1 - 1) / math.log2(i + 1) for i in range(1, min(len(true), k) + 1)
+        )
+        ndcgs.append(dcg / ideal_dcg if ideal_dcg > 0 else 0.0)
+    return float(np.mean(ndcgs))
+
+
+def success_at_k(
+    true_lists: List[List[str]], pred_lists: List[List[str]], k: int
+) -> float:
+    successes = []
+    for true, pred in zip(true_lists, pred_lists):
+        successes.append(1.0 if any(p in true for p in pred[:k]) else 0.0)
+    return float(np.mean(successes))
+
+
+def coverage_at_k(
+    true_lists: List[List[str]], pred_lists: List[List[str]], k: int
+) -> float:
+    all_true = set(pmid for true in true_lists for pmid in true)
+    retrieved = set(
+        p
+        for pred in pred_lists
+        for p in pred[:k]
+        if any(p in true for true in true_lists)
+    )
+    return len(retrieved) / len(all_true) if all_true else 0.0
+
+
+def average_precision_at_k(true: List[str], pred: List[str], k: int) -> float:
+    hits = 0
+    sum_prec = 0.0
+    for i, p in enumerate(pred[:k], start=1):
+        if p in true:
+            hits += 1
+            sum_prec += hits / i
+    return sum_prec / hits if hits > 0 else 0.0
+
+
+def map_at_k(true_lists: List[List[str]], pred_lists: List[List[str]], k: int) -> float:
+    aps = [
+        average_precision_at_k(true, pred, k)
+        for true, pred in zip(true_lists, pred_lists)
+    ]
+    return float(np.mean(aps))
+
+
+def bootstrap_confidence_interval(
+    metric_fn: Callable[[List[List[str]], List[List[str]], int], float],
+    true_lists: List[List[str]],
+    pred_lists: List[List[str]],
+    k: int,
+    num_rounds: int = 1000,
+    alpha: float = 0.05,
+) -> Tuple[float, float]:
+    n = len(true_lists)
+    scores = []
+    for _ in range(num_rounds):
+        idxs = np.random.randint(0, n, n)
+        bs_true = [true_lists[i] for i in idxs]
+        bs_pred = [pred_lists[i] for i in idxs]
+        scores.append(metric_fn(bs_true, bs_pred, k))
+    lower = np.percentile(scores, 100 * (alpha / 2))
+    upper = np.percentile(scores, 100 * (1 - alpha / 2))
+    return lower, upper
 
 
 class NonLLMRetrievalEvaluator:
@@ -25,6 +155,8 @@ class NonLLMRetrievalEvaluator:
     - Coverage@k: Measures what proportion of all relevant passages across the entire dataset were retrieved.
     - Mean Average Precision (MAP@k): Average of precision values calculated at each position where a relevant document is found.
 
+    Where k parameter indicates the number of top results to consider.
+
     ** Confidence Intervals **
     The calculate_confidence_intervals method estimates how reliable your metrics are by computing the variability across your test samples.
     """
@@ -37,145 +169,28 @@ class NonLLMRetrievalEvaluator:
         retrieval_results: List[Dict[str, Any]],
         k_values: List[int] = [1, 3, 5, 10],
     ) -> Dict[int, Dict[str, float]]:
-        """
-        Evaluate retrieval results for each k in k_values.
-
-        Args:
-            retrieval_results: List of dicts each with:
-                {
-                    'id': unique identifier,
-                    'true_pmids': List[str],
-                    'retrieved_pmids': List[str],
-                    'retrieved_scores': List[float]  # optional
-                }
-            k_values: List of k cutoffs.
-
-        Returns:
-            Dictionary mapping k -> dict of metric values.
-        """
-        # Total relevant across dataset (for coverage)
-        total_relevant = sum(
-            len(example.get("true_pmids", [])) for example in retrieval_results
-        )
-
+        true_lists = [ex.get("true_pmids", []) for ex in retrieval_results]
+        pred_lists = [ex.get("retrieved_pmids", []) for ex in retrieval_results]
         results: Dict[int, Dict[str, float]] = {}
         for k in k_values:
-            precisions, recalls, f1s, mrrs, ndcgs, successes, aps = (
-                [],
-                [],
-                [],
-                [],
-                [],
-                [],
-                [],
-            )
-            total_found = 0
-
-            for example in retrieval_results:
-                true_set: Set[str] = set(example.get("true_pmids", []))
-                retrieved_list: List[str] = example.get("retrieved_pmids", [])[:k]
-                retrieved_set: Set[str] = set(retrieved_list)
-
-                # Precision@k
-                precision = (
-                    len(retrieved_set & true_set) / len(retrieved_list)
-                    if retrieved_list
-                    else 0.0
-                )
-                precisions.append(precision)
-
-                # Recall@k
-                recall = (
-                    len(retrieved_set & true_set) / len(true_set) if true_set else 1.0
-                )
-                recalls.append(recall)
-
-                # F1@k
-                f1 = (
-                    2 * precision * recall / (precision + recall)
-                    if (precision + recall) > 0
-                    else 0.0
-                )
-                f1s.append(f1)
-
-                # MRR@k
-                mrr = self._calculate_mrr(retrieved_list, true_set)
-                mrrs.append(mrr)
-
-                # nDCG@k
-                ndcg = self._calculate_ndcg(retrieved_list, true_set, k)
-                ndcgs.append(ndcg)
-
-                # Success@k
-                success = 1.0 if precision > 0 else 0.0
-                successes.append(success)
-
-                # AP@k (for MAP)
-                ap = self._calculate_average_precision(retrieved_list, true_set)
-                aps.append(ap)
-
-                # Coverage counters
-                total_found += len(retrieved_set & true_set)
-
-            # Aggregated metrics
-            coverage = total_found / total_relevant if total_relevant > 0 else 0.0
             results[k] = {
-                "precision": np.mean(precisions) if precisions else 0.0,
-                "recall": np.mean(recalls) if recalls else 0.0,
-                "f1": np.mean(f1s) if f1s else 0.0,
-                "mrr": np.mean(mrrs) if mrrs else 0.0,
-                "ndcg": np.mean(ndcgs) if ndcgs else 0.0,
-                "success": np.mean(successes) if successes else 0.0,
-                "map": np.mean(aps) if aps else 0.0,
-                "coverage": coverage,
+                "precision": precision_at_k(true_lists, pred_lists, k),
+                "recall": recall_at_k(true_lists, pred_lists, k),
+                "f1": f1_at_k(true_lists, pred_lists, k),
+                "mrr": mean_reciprocal_rank(true_lists, pred_lists, k),
+                "ndcg": ndcg_at_k(true_lists, pred_lists, k),
+                "success": success_at_k(true_lists, pred_lists, k),
+                "map": map_at_k(true_lists, pred_lists, k),
+                "coverage": coverage_at_k(true_lists, pred_lists, k),
             }
-
         self.metrics_per_k = results
         return results
 
-    def _calculate_mrr(self, retrieved: List[str], relevant: Set[str]) -> float:
-        """Mean Reciprocal Rank."""
-        for idx, doc in enumerate(retrieved, start=1):
-            if doc in relevant:
-                return 1.0 / idx
-        return 0.0
-
-    def _calculate_ndcg(
-        self, retrieved: List[str], relevant: Set[str], k: int
-    ) -> float:
-        """Normalized Discounted Cumulative Gain."""
-        dcg = 0.0
-        for i, doc in enumerate(retrieved[:k]):
-            if doc in relevant:
-                dcg += 1.0 / math.log2(i + 2)
-        ideal_dcg = sum(1.0 / math.log2(i + 2) for i in range(min(len(relevant), k)))
-        return dcg / ideal_dcg if ideal_dcg > 0 else 0.0
-
-    def _calculate_average_precision(
-        self, retrieved: List[str], relevant: Set[str]
-    ) -> float:
-        """Average Precision for MAP."""
-        hits = 0
-        sum_prec = 0.0
-        for idx, doc in enumerate(retrieved, start=1):
-            if doc in relevant:
-                hits += 1
-                sum_prec += hits / idx
-        return sum_prec / len(relevant) if relevant else 0.0
-
     def generate_summary_report(self, output_path: str = None) -> pd.DataFrame:
-        """
-        Generate a pivot table report of metrics_per_k.
-
-        Args:
-            output_path: if provided, save CSV to this path.
-
-        Returns:
-            Pandas DataFrame (metrics x k values).
-        """
         if not self.metrics_per_k:
-            raise ValueError("Run evaluate_retrieval first to populate metrics_per_k.")
-
+            raise ValueError(
+                "Run calculate_evaluation_metrics first to populate metrics_per_k."
+            )
         df = pd.DataFrame(self.metrics_per_k).T
         df.index.name = "k"
         if output_path:
@@ -187,23 +202,21 @@ class NonLLMRetrievalEvaluator:
         metrics_to_plot: List[str] = None,
         figsize: Tuple[int, int] = (12, 8),
         output_path: str = None,
+        retriever_name: str = "test_retriever",
     ) -> None:
-        """
-        Plot selected metrics across k values.
-        """
         if not self.metrics_per_k:
-            raise ValueError("Run evaluate_retrieval first to populate metrics_per_k.")
-
+            raise ValueError(
+                "Run calculate_evaluation_metrics first to populate metrics_per_k."
+            )
         df = pd.DataFrame(self.metrics_per_k).T
         ks = df.index.values
         to_plot = metrics_to_plot or [c for c in df.columns if c != "coverage"]
-
         plt.figure(figsize=figsize)
         for metric in to_plot:
             plt.plot(ks, df[metric], marker="o", label=metric)
         plt.xlabel("k")
         plt.ylabel("Score")
-        plt.title("Retrieval Metrics")
+        plt.title(f"Retrieval Metrics - {retriever_name}")
         plt.xticks(ks)
         plt.grid(alpha=0.3, linestyle="--")
         plt.legend()
@@ -220,21 +233,11 @@ class NonLLMRetrievalEvaluator:
         figsize: Tuple[int, int] = (12, 8),
         output_file: str = None,
     ) -> pd.DataFrame:
-        """
-        Compare a single metric at a given k across models.
-
-        Args:
-            model_results: {model_name: {k: {metric: value}}}
-            metric: which metric to compare
-            k: k value
-        """
         data = []
         for model, res in model_results.items():
             val = res.get(k, {}).get(metric, 0.0)
             data.append({"model": model, metric: val})
         df = pd.DataFrame(data)
-
-        # Plot
         plt.figure(figsize=figsize)
         plt.bar(df["model"], df[metric])
         plt.ylabel(metric)
@@ -252,58 +255,28 @@ class NonLLMRetrievalEvaluator:
         k: int = 10,
         confidence: float = 0.95,
     ) -> Dict[str, Dict[str, float]]:
-        """
-        Calculate approximate confidence intervals for each metric at specified k.
-
-        Args:
-            retrieval_results: same format as evaluate_retrieval
-            k: cutoff
-            confidence: 0.95, 0.90, or 0.99
-        """
-        # Collect per-example metrics
-        sample_metrics: Dict[str, List[float]] = {
-            "precision": [],
-            "recall": [],
-            "f1": [],
-            "mrr": [],
-            "ndcg": [],
-            "success": [],
-            "ap": [],
+        true_lists = [ex.get("true_pmids", []) for ex in retrieval_results]
+        pred_lists = [ex.get("retrieved_pmids", []) for ex in retrieval_results]
+        metric_fns: Dict[str, Callable] = {
+            "precision": precision_at_k,
+            "recall": recall_at_k,
+            "f1": f1_at_k,
+            "mrr": mean_reciprocal_rank,
+            "ndcg": ndcg_at_k,
+            "success": success_at_k,
+            "map": map_at_k,
         }
-        for example in retrieval_results:
-            true_set = set(example.get("true_pmids", []))
-            retrieved = example.get("retrieved_pmids", [])[:k]
-            retrieved_set = set(retrieved)
-            p = len(retrieved_set & true_set) / len(retrieved) if retrieved else 0.0
-            r = len(retrieved_set & true_set) / len(true_set) if true_set else 1.0
-            f1 = (2 * p * r / (p + r)) if (p + r) > 0 else 0.0
-            mrr = self._calculate_mrr(retrieved, true_set)
-            ndcg = self._calculate_ndcg(retrieved, true_set, k)
-            success = 1.0 if p > 0 else 0.0
-            ap = self._calculate_average_precision(retrieved, true_set)
-
-            sample_metrics["precision"].append(p)
-            sample_metrics["recall"].append(r)
-            sample_metrics["f1"].append(f1)
-            sample_metrics["mrr"].append(mrr)
-            sample_metrics["ndcg"].append(ndcg)
-            sample_metrics["success"].append(success)
-            sample_metrics["ap"].append(ap)
-
-        # z-scores
-        z_map = {0.90: 1.645, 0.95: 1.96, 0.99: 2.576}
-        z = z_map.get(confidence, 1.96)
-
         ci: Dict[str, Dict[str, float]] = {}
-        for metric_name, values in sample_metrics.items():
-            arr = np.array(values)
-            mean = arr.mean()
-            se = sem(arr) if len(arr) > 1 else 0.0
-            moe = z * se
-            ci[f"{metric_name}@{k}"] = {
+        alpha = 1 - confidence
+        for name, fn in metric_fns.items():
+            mean = fn(true_lists, pred_lists, k)
+            lower, upper = bootstrap_confidence_interval(
+                fn, true_lists, pred_lists, k, alpha=alpha
+            )
+            ci[f"{name}@{k}"] = {
                 "mean": mean,
-                "lower_bound": max(0.0, mean - moe),
-                "upper_bound": min(1.0, mean + moe),
+                "lower_bound": lower,
+                "upper_bound": upper,
             }
         return ci
 
@@ -312,27 +285,29 @@ def run_evaluation(
     retrieval_results: List[Dict[str, Any]],
     k_values: List[int] = [1, 3, 5, 10],
     output_dir: str = None,
+    retriever_name: str = "test_retriever",
 ) -> Tuple[Dict[int, Dict[str, float]], NonLLMRetrievalEvaluator]:
-    """
-    Function to run evaluation and optionally save results.
-    """
     evaluator = NonLLMRetrievalEvaluator()
     metrics = evaluator.calculate_evaluation_metrics(retrieval_results, k_values)
 
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
-        # save metrics JSON
         save_json_file(
-            file_path=os.path.join(output_dir, "retrieval_metrics.json"),
+            file_path=os.path.join(
+                output_dir, f"{retriever_name}_retrieval_metrics.json"
+            ),
             data=metrics,
         )
-        # save CSV summary
         evaluator.generate_summary_report(
-            output_path=os.path.join(output_dir, "retrieval_metrics_summary.csv")
+            output_path=os.path.join(
+                output_dir, f"{retriever_name}_retrieval_metrics_summary.csv"
+            )
         )
-        # save plot
         evaluator.plot_metrics(
-            output_path=os.path.join(output_dir, "retrieval_metrics_plot.png")
+            output_path=os.path.join(
+                output_dir, f"{retriever_name}_retrieval_metrics_plot.png"
+            ),
+            retriever_name=retriever_name,
         )
 
     return metrics, evaluator

@@ -14,7 +14,7 @@ from graph_embeddings.data_extraction import (
     sample_graph,
 )
 from graph_embeddings.data_preparation import build_pyg_data, split_data
-from graph_embeddings.model import build_model
+from graph_embeddings.graph_encoder_model import build_model
 from graph_embeddings.train import evaluate, save_metrics, save_model, train_model
 from graph_embeddings.utils import set_seed
 
