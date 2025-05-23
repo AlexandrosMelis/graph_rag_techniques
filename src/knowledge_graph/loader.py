@@ -14,7 +14,7 @@ from llms.embedding_model import EmbeddingModel
 from utils.utils import read_json_file
 
 # --- Constants ---
-DEFAULT_SIMILARITY_THRESHOLD = 0.8
+DEFAULT_SIMILARITY_THRESHOLD = 0.7
 DEFAULT_MESH_DEFINITIONS_FILE = "mesh_term_definitions.json"
 
 

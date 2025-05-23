@@ -1,5 +1,5 @@
 import os
-from typing import List, Tuple
+from typing import List
 
 import numpy as np
 import pandas as pd
@@ -9,9 +9,6 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, Dataset, random_split
-from tqdm import tqdm
-
-from graph_embeddings.projection_data_processor import DataProcessor
 
 
 class QGDataset(Dataset):

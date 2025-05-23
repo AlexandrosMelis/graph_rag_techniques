@@ -159,30 +159,28 @@ if __name__ == "__main__":
 
     # gnn retriever
 
-    # import torch
+    import torch
 
-    # from graph_embeddings.query_proj_model_with_domain_classifier import (
-    #     QueryProjectionEncoderModel,
-    # )
-    # from retrieval_techniques.gnn_retriever import GraphEmbeddingSimilarityRetriever
+    from graph_embeddings.projection_model_v3 import QueryProjectionModel
+    from retrieval_techniques.gnn_retriever import GraphEmbeddingSimilarityRetriever
 
-    # proj_model = QueryProjectionEncoderModel(dim_sem=768, dim_graph=768)
-    # model_path = os.path.join(
-    #     ConfigPath.MODELS_DIR, "proj_model_da_20250516_230821", "best_query_proj.pt"
-    # )
-    # proj_model.load_state_dict(torch.load(model_path))
-    # proj_model.eval()
-    # retriever = GraphEmbeddingSimilarityRetriever(
-    #     embedding_model=embedding_model,
-    #     neo4j_driver=neo4j_connection.get_driver(),
-    #     projection_model=proj_model,
-    #     device="cpu",
-    # )
-
-    retriever = BaselineBERTSimilarityRetriever(
+    proj_model = QueryProjectionModel(dim_sem=768, dim_graph=768)
+    model_path = os.path.join(
+        ConfigPath.MODELS_DIR, "proj_model_v3_20250522_225705", "best.pt"
+    )
+    proj_model.load_state_dict(torch.load(model_path))
+    proj_model.eval()
+    retriever = GraphEmbeddingSimilarityRetriever(
         embedding_model=embedding_model,
         neo4j_driver=neo4j_connection.get_driver(),
+        projection_model=proj_model,
+        device="cpu",
     )
+
+    # retriever = BaselineBERTSimilarityRetriever(
+    #     embedding_model=embedding_model,
+    #     neo4j_driver=neo4j_connection.get_driver(),
+    # )
 
     # # Evaluate similarity search retriever without LLM
     # func_args = {

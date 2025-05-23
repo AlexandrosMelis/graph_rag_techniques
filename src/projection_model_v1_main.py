@@ -5,8 +5,8 @@ from datetime import datetime
 import torch
 
 from configs.config import ConfigEnv, ConfigPath
-from graph_embeddings.query_proj_model_with_domain_classifier import (
-    DataProcessor,
+from graph_embeddings.projection_data_processor import DataProcessor
+from graph_embeddings.projection_model_v1 import (
     QGDataset,
     train_query_proj_with_domain_classifier,
 )
