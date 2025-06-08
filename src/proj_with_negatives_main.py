@@ -4,8 +4,21 @@ from datetime import datetime
 import torch
 
 from configs.config import ConfigEnv, ConfigPath
-from graph_embeddings.projection_model_v2 import train_projection
+from graph_embeddings.proj_model_with_triplets_ import train_projection
 
+"""
+Main file for training the query projection model with triplets.
+
+Model details:
+- input: triplet (q, c_pos, c_neg), where:
+    - Query: Question's BERT embedding (q_emb)
+    - Positive: Graph embedding of a context connected to this question (c_pos)
+    - Negative: Graph embedding of a context NOT connected to this question (c_neg)
+- hard negative sampling: Sample random contexts NOT connected to it (negatives)
+- output: projection of q, c_pos, c_neg into a joint embedding space
+- loss: triplet margin loss
+- architecture: MLP with 3 hidden layers [1024, 512, 256]
+"""
 
 def main():
 

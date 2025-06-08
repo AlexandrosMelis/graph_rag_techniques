@@ -6,11 +6,23 @@ import torch
 
 from configs.config import ConfigEnv, ConfigPath
 from graph_embeddings.projection_data_processor import DataProcessor
-from graph_embeddings.projection_model_v1 import (
+from graph_embeddings.proj_model_with_domain_classifier import (
     QGDataset,
     train_query_proj_with_domain_classifier,
 )
 from llms.embedding_model import EmbeddingModel
+
+
+"""
+Main file for training the query projection model with a domain classifier.
+
+Model details:
+- input: question embedding & average of all its context graph embeddings
+- output: projection of question embedding into a joint embedding space
+- loss: MSE + contrastive + domain-adversarial
+- architecture: shallow MLP on hidden layer
+- domain classifier: trained to distinguish between question embeddings and context graph embeddings
+"""
 
 
 def create_and_store_question_embeddings():

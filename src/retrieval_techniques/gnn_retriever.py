@@ -2,7 +2,7 @@ from typing import Any
 
 from neo4j import GraphDatabase
 
-from graph_embeddings.projection_model_v3 import project_query
+from graph_embeddings.proj_model_with_attentive_pooling import project_query
 from llms.embedding_model import EmbeddingModel
 from retrieval_techniques.base_retriever import BaseRetriever
 

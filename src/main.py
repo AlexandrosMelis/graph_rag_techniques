@@ -147,7 +147,7 @@ if __name__ == "__main__":
     # GRAPH PREPARATION AND LOADING
     #############################################
     # 1 step: construct the graph dataset
-    # construct_graph_dataset(asq_reader=asq_reader, file_name="bioasq_test.parquet")
+    construct_graph_dataset(asq_reader=asq_reader, file_name="bioasq_test.parquet")
     # 2 step: load the dataset to Neo4j db
     # load_graph_data(embedding_model=embedding_model, graph_crud=graph_crud)
 
@@ -161,7 +161,7 @@ if __name__ == "__main__":
 
     import torch
 
-    from graph_embeddings.projection_model_v3 import QueryProjectionModel
+    from graph_embeddings.proj_model_with_attentive_pooling import QueryProjectionModel
     from retrieval_techniques.gnn_retriever import GraphEmbeddingSimilarityRetriever
 
     proj_model = QueryProjectionModel(dim_sem=768, dim_graph=768)
