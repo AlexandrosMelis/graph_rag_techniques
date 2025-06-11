@@ -8,8 +8,8 @@ from torch.nn import MSELoss
 from torch.utils.data import DataLoader, Dataset, random_split
 from tqdm import tqdm
 
-from graph_embeddings.gat_projection_model import GATQueryProjector
-from graph_embeddings.query_gat_loader import QueryGATLoader
+from projection_models.graph_aware.gat_projection_model import GATQueryProjector
+from projection_models.graph_aware.query_gat_loader import QueryGATLoader
 
 
 class QGPairDataset(Dataset):

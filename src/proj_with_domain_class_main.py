@@ -6,7 +6,7 @@ import torch
 
 from configs.config import ConfigEnv, ConfigPath
 from graph_embeddings.projection_data_processor import DataProcessor
-from graph_embeddings.proj_model_with_domain_classifier import (
+from projection_models.proj_model_with_domain_classifier import (
     QGDataset,
     train_query_proj_with_domain_classifier,
 )

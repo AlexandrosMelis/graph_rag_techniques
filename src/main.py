@@ -147,7 +147,7 @@ if __name__ == "__main__":
     # GRAPH PREPARATION AND LOADING
     #############################################
     # 1 step: construct the graph dataset
-    construct_graph_dataset(asq_reader=asq_reader, file_name="bioasq_test.parquet")
+    # construct_graph_dataset(asq_reader=asq_reader, file_name="bioasq_test.parquet")
     # 2 step: load the dataset to Neo4j db
     # load_graph_data(embedding_model=embedding_model, graph_crud=graph_crud)
 
@@ -157,24 +157,69 @@ if __name__ == "__main__":
 
     # initialize retriever
 
-    # gnn retriever
+    # GAT-based retriever
 
     import torch
+    import glob
 
-    from graph_embeddings.proj_model_with_attentive_pooling import QueryProjectionModel
+    from projection_models.projection_gat_model import load_gat_model, GATDataProcessor
     from retrieval_techniques.gnn_retriever import GraphEmbeddingSimilarityRetriever
 
-    proj_model = QueryProjectionModel(dim_sem=768, dim_graph=768)
-    model_path = os.path.join(
-        ConfigPath.MODELS_DIR, "proj_model_v3_20250522_225705", "best.pt"
+    # Find the latest GAT model directory
+    gat_model_pattern = os.path.join(ConfigPath.MODELS_DIR, "gat_proj_model_*")
+    gat_model_dirs = glob.glob(gat_model_pattern)
+    
+    if not gat_model_dirs:
+        raise ValueError(f"No GAT model directories found matching pattern: {gat_model_pattern}")
+    
+    # Get the most recent model directory
+    latest_gat_dir = max(gat_model_dirs, key=os.path.getctime)
+    best_model_path = os.path.join(latest_gat_dir, "best_gat_model.pt")
+    
+    if not os.path.exists(best_model_path):
+        raise ValueError(f"Best GAT model not found at: {best_model_path}")
+    
+    print(f"🔍 Loading GAT model from: {latest_gat_dir}")
+    print(f"📁 Model file: {best_model_path}")
+    
+    # Load GAT projection model
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"💻 Using device: {device}")
+    
+    try:
+        gat_model = load_gat_model(best_model_path, device=device)
+        print(f"✅ GAT model loaded successfully")
+        
+        # Print model architecture info
+        if hasattr(gat_model, 'input_dim'):
+            print(f"🏗️ Model Architecture:")
+            print(f"   Input dimension: {gat_model.input_dim}")
+            print(f"   Hidden dimension: {gat_model.hidden_dim}")
+            print(f"   Output dimension: {gat_model.output_dim}")
+            print(f"   GAT layers: {gat_model.n_layers}")
+            total_params = sum(p.numel() for p in gat_model.parameters())
+            print(f"   Total parameters: {total_params:,}")
+            
+    except Exception as e:
+        print(f"❌ Failed to load GAT model: {e}")
+        raise
+    
+    # Initialize GAT data processor for subgraph construction
+    gat_data_processor = GATDataProcessor(
+        uri=ConfigEnv.NEO4J_URI,
+        user=ConfigEnv.NEO4J_USER,
+        password=ConfigEnv.NEO4J_PASSWORD,
+        database=ConfigEnv.NEO4J_DB
     )
-    proj_model.load_state_dict(torch.load(model_path))
-    proj_model.eval()
+    
+    # Create GAT-based retriever
     retriever = GraphEmbeddingSimilarityRetriever(
         embedding_model=embedding_model,
         neo4j_driver=neo4j_connection.get_driver(),
-        projection_model=proj_model,
-        device="cpu",
+        projection_model=gat_model,
+        device=device,
+        gat_data_processor=gat_data_processor,  # Add GAT-specific processor
+        use_gat_projection=True  # Flag to indicate GAT-based projection
     )
 
     # retriever = BaselineBERTSimilarityRetriever(
@@ -188,21 +233,68 @@ if __name__ == "__main__":
     #     "k": 10,
     #     "n_similar_contexts": 10,
     # }
+    # Get retriever statistics and save them
+    retriever_stats = retriever.get_retrieval_stats()
+    print(f"\n📊 Retriever Configuration:")
+    for key, value in retriever_stats.items():
+        print(f"   {key}: {value}")
+    
+    # Test GAT retrieval with a sample query
+    print(f"\n🧪 Testing GAT retrieval with sample query...")
+    try:
+        sample_query = data[0]["question"]
+        print(f"📝 Sample query: {sample_query[:100]}...")
+        
+        test_results = retriever.retrieve(query=sample_query, top_k=3)
+        print(f"✅ Test retrieval successful - got {len(test_results)} results")
+        
+        if test_results:
+            print(f"🎯 Top result score: {test_results[0]['score']:.4f}")
+            print(f"📄 Top result PMID: {test_results[0]['pmid']}")
+    except Exception as e:
+        print(f"❌ Test retrieval failed: {e}")
+        print("⚠️ Continuing with evaluation anyway...")
+    
+    # Evaluation configuration
     retriever_args = {"top_k": 10}
-
-    # create results folder
+    k_eval_values = [1, 3, 5, 10]
+    
+    # Create results folder with GAT model info
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_name = os.path.basename(latest_gat_dir)
     output_dir_path = os.path.join(
-        ConfigPath.RESULTS_DIR, f"{retriever.name}_{timestamp}"
+        ConfigPath.RESULTS_DIR, f"GAT_{model_name}_{timestamp}"
     )
     os.makedirs(output_dir_path, exist_ok=True)
+    
+    print(f"\n🔍 Starting GAT Model Evaluation")
+    print(f"📁 Results will be saved to: {output_dir_path}")
+    print(f"🎯 Evaluation metrics: Recall@{k_eval_values}")
+    print(f"📊 Retrieval top-k: {retriever_args['top_k']}")
+    print(f"📝 Test data samples: {len(data)}")
+    
+    # Save GAT model info to results
+    model_info = {
+        "gat_model_directory": latest_gat_dir,
+        "gat_model_file": best_model_path,
+        "retriever_stats": retriever_stats,
+        "evaluation_config": {
+            "top_k": retriever_args["top_k"],
+            "k_eval_values": k_eval_values,
+            "test_samples": len(data)
+        }
+    }
+    save_json_file(
+        file_path=os.path.join(output_dir_path, "gat_model_info.json"),
+        data=model_info
+    )
 
     evaluate_retriever_without_llm(
         source_data=data,
         retriever=retriever,
         retriever_args=retriever_args,
         output_dir_path=output_dir_path,
-        k_eval_values=[1, 3, 5, 10],
+        k_eval_values=k_eval_values,
     )
 
     # Evaluate similarity search retriever with LLM

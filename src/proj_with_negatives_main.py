@@ -4,7 +4,7 @@ from datetime import datetime
 import torch
 
 from configs.config import ConfigEnv, ConfigPath
-from graph_embeddings.proj_model_with_triplets_ import train_projection
+from projection_models.proj_model_with_triplets_ import train_projection
 
 """
 Main file for training the query projection model with triplets.
