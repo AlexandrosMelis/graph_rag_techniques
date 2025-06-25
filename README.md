@@ -30,7 +30,7 @@ This repository implements and compares multiple graph-based retrieval technique
 - **Scalable Architecture**: Supports both CPU and GPU training/inference
 - **Extensible Design**: Modular architecture for easy addition of new techniques
 
-## 📁 Folder Structure
+## Folder Structure
 
 ```
 graph_rag_techniques/
@@ -122,7 +122,7 @@ graph_rag_techniques/
 └── README.md                   # This documentation
 ```
 
-## 🔧 Prerequisites
+## Prerequisites
 
 ### **1. Dataset Requirements**
 
@@ -177,9 +177,9 @@ NEO4J_PUBMED_DATABASE=bioasq
 ### **4. Python Environment**
 
 #### **System Requirements:**
-- **Python**: 3.8+ (recommended: 3.9+)
+- **Python**: 3.10+
 - **CUDA**: Optional but recommended for GPU acceleration
-- **Memory**: Minimum 16GB RAM (32GB recommended for large datasets)
+- **Memory**: Minimum 16GB RAM
 
 #### **Installation:**
 ```bash
@@ -285,7 +285,7 @@ python src/run_gat_evaluation.py
 - Can run efficiently on CPU
 - Training time: 30 minutes - 2 hours
 
-## 📊 Usage Examples
+## Usage Examples
 
 ### **Basic Pipeline Execution:**
 ```python
@@ -309,7 +309,7 @@ python src/run_embeddings_visualization.py
 python src/visualize_embeddings_comparison.py
 ```
 
-## 📈 Evaluation Metrics
+## Evaluation Metrics
 
 The system provides comprehensive evaluation using:
 
