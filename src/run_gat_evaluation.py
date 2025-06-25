@@ -112,8 +112,8 @@ def setup_gat_retriever(gat_model_path, device="auto"):
         projection_model=gat_model,
         device=device,
         gat_data_processor=gat_data_processor,
-        use_gat_projection=True,
-        top_k_contexts=10
+        use_gat_projection=False,
+        top_k_contexts=10,
     )
     
     return retriever
@@ -141,7 +141,7 @@ def test_retrieval(retriever, test_data):
 def run_gat_evaluation(
     max_samples=None,
     top_k_retrieval=10,
-    k_eval_values=[1, 5, 10],
+    k_eval_values=[1,3, 5, 10],
     device="auto"
 ):
     """

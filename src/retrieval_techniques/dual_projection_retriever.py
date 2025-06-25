@@ -107,8 +107,8 @@ class DualProjectionRetriever(BaseRetriever):
         cypher = """
         WITH $sem_vec AS q_emb
         MATCH (context:CONTEXT)
-        WHERE context.sbert_embedding IS NOT NULL
-        WITH context, vector.similarity.cosine(q_emb, context.sbert_embedding) AS semantic_score
+        WHERE context.embedding IS NOT NULL
+        WITH context, vector.similarity.cosine(q_emb, context.embedding) AS semantic_score
         ORDER BY semantic_score DESC
         LIMIT $k
         RETURN

@@ -63,6 +63,7 @@ class DualProjectionModel(nn.Module):
     
     def __init__(
         self,
+        input_dim: int = 768,
         dim_sem: int = 768,
         dim_graph: int = 768,
         hidden_dims: List[int] = [512, 2048, 1024],
@@ -70,6 +71,7 @@ class DualProjectionModel(nn.Module):
     ):
         super().__init__()
         
+        self.input_dim = input_dim
         self.dim_sem = dim_sem
         self.dim_graph = dim_graph
         self.hidden_dims = hidden_dims
@@ -77,7 +79,7 @@ class DualProjectionModel(nn.Module):
         
         def build_head(output_dim):
             layers = []
-            prev = dim_sem  # Input dimension (BERT embedding size)
+            prev = input_dim  # Input dimension (BERT embedding size)
             for h in hidden_dims:
                 layers += [
                     nn.Linear(prev, h),
@@ -91,8 +93,8 @@ class DualProjectionModel(nn.Module):
             return nn.Sequential(*layers)
 
         # Two separate heads
-        self.semantic_head = build_head(dim_sem)    # Projects into SBERT space
-        self.graph_head = build_head(dim_graph)     # Projects into GNN space
+        self.semantic_head = build_head(dim_sem)    # Projects into semantic space
+        self.graph_head = build_head(dim_graph)     # Projects into graph space
         
         # Initialize weights
         self._init_weights()
@@ -524,10 +526,16 @@ class DualProjectionTrainer:
         self.model.train()
         self.optimizer.zero_grad()
         
-        # Move data to device
+        # Move data to device - handle both old and new data formats
         question_embeddings = batch['question_embeddings'].to(self.device)
-        semantic_contexts = batch['semantic_context_embeddings'].to(self.device)
-        graph_contexts = batch['graph_context_embeddings'].to(self.device)
+        if 'semantic_context_embeddings' in batch:
+            # Old data format
+            semantic_contexts = batch['semantic_context_embeddings'].to(self.device)
+            graph_contexts = batch['graph_context_embeddings'].to(self.device)
+        else:
+            # Neo4j data format
+            semantic_contexts = batch['positive_semantic_embeddings'].to(self.device)
+            graph_contexts = batch['positive_graph_embeddings'].to(self.device)
         
         # Forward pass
         semantic_proj, graph_proj = self.model(question_embeddings)
@@ -536,10 +544,13 @@ class DualProjectionTrainer:
         semantic_loss = self.contrastive_loss(semantic_proj, semantic_contexts)
         graph_loss = self.contrastive_loss(graph_proj, graph_contexts)
         
-        # Handle hard negatives if present
-        if 'hard_negative_semantic' in batch:
-            hard_neg_semantic = batch['hard_negative_semantic'].to(self.device)
-            hard_neg_graph = batch['hard_negative_graph'].to(self.device)
+        # Handle hard negatives if present - check both old and new formats
+        hard_neg_key_semantic = 'hard_negative_semantic' if 'hard_negative_semantic' in batch else 'negative_semantic_embeddings'
+        hard_neg_key_graph = 'hard_negative_graph' if 'hard_negative_graph' in batch else 'negative_graph_embeddings'
+        
+        if hard_neg_key_semantic in batch:
+            hard_neg_semantic = batch[hard_neg_key_semantic].to(self.device)
+            hard_neg_graph = batch[hard_neg_key_graph].to(self.device)
             
             # Expand projections to match hard negatives
             batch_size = semantic_proj.shape[0]
@@ -711,10 +722,16 @@ class DualProjectionTrainer:
         
         with torch.no_grad():
             for batch in tqdm(validation_dataloader, desc="Validation"):
-                # Move data to device
+                # Move data to device - handle both old and new data formats
                 question_embeddings = batch['question_embeddings'].to(self.device)
-                semantic_contexts = batch['semantic_context_embeddings'].to(self.device)
-                graph_contexts = batch['graph_context_embeddings'].to(self.device)
+                if 'semantic_context_embeddings' in batch:
+                    # Old data format
+                    semantic_contexts = batch['semantic_context_embeddings'].to(self.device)
+                    graph_contexts = batch['graph_context_embeddings'].to(self.device)
+                else:
+                    # Neo4j data format
+                    semantic_contexts = batch['positive_semantic_embeddings'].to(self.device)
+                    graph_contexts = batch['positive_graph_embeddings'].to(self.device)
                 
                 # Forward pass
                 semantic_proj, graph_proj = self.model(question_embeddings)
@@ -745,6 +762,7 @@ class DualProjectionTrainer:
             'optimizer_state_dict': self.optimizer.state_dict(),
             'train_history': self.train_history,
             'model_config': {
+                'input_dim': self.model.input_dim,
                 'dim_sem': self.model.dim_sem,
                 'dim_graph': self.model.dim_graph,
                 'hidden_dims': self.model.hidden_dims,
@@ -780,6 +798,7 @@ class DualProjectionTrainer:
         """Save training configuration."""
         config = {
             'model_config': {
+                'input_dim': self.model.input_dim,
                 'dim_sem': self.model.dim_sem,
                 'dim_graph': self.model.dim_graph,
                 'hidden_dims': self.model.hidden_dims,
@@ -822,6 +841,7 @@ def load_dual_projection_model(
     
     # Create model
     model = DualProjectionModel(
+        input_dim=model_config.get('input_dim', 768),
         dim_sem=model_config['dim_sem'],
         dim_graph=model_config['dim_graph'],
         hidden_dims=model_config['hidden_dims'],
@@ -840,7 +860,8 @@ def load_dual_projection_model(
 def create_dual_projection_example():
     """Create an example dual projection model."""
     return DualProjectionModel(
-        dim_sem=768,           # BERT embedding dimension
+        input_dim=768,         # Input BERT embedding dimension
+        dim_sem=768,           # Semantic embedding dimension
         dim_graph=768,         # Graph embedding dimension
         hidden_dims=[512, 2048, 1024],  # Hidden layer dimensions
         p_dropout=0.2          # Dropout probability

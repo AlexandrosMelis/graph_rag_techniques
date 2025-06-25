@@ -14,7 +14,7 @@ from knowledge_graph.crud import GraphCrud
 from knowledge_graph.loader import GraphLoader
 from llms.embedding_model import EmbeddingModel
 from retrieval_techniques.base_retriever import BaseRetriever
-from retrieval_techniques.similarity_search import BaselineBERTSimilarityRetriever
+from retrieval_techniques.non_ml_retrievers import BaselineBERTSimilarityRetriever
 from utils.utils import read_json_file, save_json_file
 
 
@@ -104,24 +104,24 @@ def evaluate_retriever_without_llm(
     print("\n\nEvaluation without LLM completed successfully!")
 
 
-def evaluate_retriever_with_llm(
-    source_data: list,
-    retriever: Any,
-    output_dir_path: str = None,
-    llm: Any = None,
-    embedding_model: Any = None,
-):
-    retrieved_answers = collect_generated_answers(
-        source_data=source_data, retriever=retriever, output_dir=output_dir_path
-    )
-    # TODO: add evaluation function
-    run_evaluation_on_generated_answers(
-        generated_data=retrieved_answers,
-        llm=llm,
-        embedding_model=embedding_model,
-        output_dir=output_dir_path,
-    )
-    print("\n\nEvaluation with LLM completed successfully!")
+# def evaluate_retriever_with_llm(
+#     source_data: list,
+#     retriever: Any,
+#     output_dir_path: str = None,
+#     llm: Any = None,
+#     embedding_model: Any = None,
+# ):
+#     retrieved_answers = collect_generated_answers(
+#         source_data=source_data, retriever=retriever, output_dir=output_dir_path
+#     )
+#     # TODO: add evaluation function
+#     run_evaluation_on_generated_answers(
+#         generated_data=retrieved_answers,
+#         llm=llm,
+#         embedding_model=embedding_model,
+#         output_dir=output_dir_path,
+#     )
+#     print("\n\nEvaluation with LLM completed successfully!")
 
 
 if __name__ == "__main__":

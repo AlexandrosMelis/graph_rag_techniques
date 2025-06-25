@@ -30,6 +30,15 @@ from utils.utils import save_json_file
 
 def find_latest_dual_projection_model():
     """Find the most recently trained Dual Projection model."""
+    # First try the specific directory mentioned by user
+    specific_model_dir = os.path.join(ConfigPath.MODELS_DIR, "dual_proj_neo4j_20250614_214744")
+    specific_model_path = os.path.join(specific_model_dir, "best_dual_projection_model.pt")
+    
+    if os.path.exists(specific_model_path):
+        print(f"✅ Found specific dual projection model: {specific_model_dir}")
+        return specific_model_dir, specific_model_path
+    
+    # Fall back to finding latest model
     dual_proj_model_pattern = os.path.join(ConfigPath.MODELS_DIR, "dual_proj_model_*")
     dual_proj_model_dirs = glob.glob(dual_proj_model_pattern)
     
