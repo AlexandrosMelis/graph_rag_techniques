@@ -1,7 +1,7 @@
 # Graph RAG Techniques
 **AUTH Diploma Thesis Project**
 
-A comprehensive research project implementing and evaluating various Graph Retrieval-Augmented Generation (RAG) techniques for biomedical question answering. This repository explores multiple approaches to enhance document retrieval using knowledge graphs, neural network models, and advanced graph algorithms.
+A comprehensive research project implementing and evaluating various retrieval techniques for biomedical question answering to enhance Graph Retrieval-Augmented Generation (RAG). This repository explores multiple approaches to enhance document retrieval using knowledge graphs, neural network models, and advanced graph algorithms.
 
 ## Project Scope
 
@@ -18,16 +18,15 @@ This repository implements and compares multiple graph-based retrieval technique
    - Heterogeneous GNN models
    - GAT-based query projection
 4. **Advanced Retrieval Methods**:
-   - Personalized PageRank retrieval
+   - Graph embedding similarity search
    - Multi-hop neighborhood expansion
    - MeSH subgraph-based retrieval
-   - Graph embedding similarity search
-
+   - Personalized PageRank retrieval
+   
 ### **Key Features:**
-- **Multi-modal Knowledge Graph**: Integrates BioASQ questions, PubMed articles, and MeSH terms
+- **Knowledge Graph**: Integrates BioASQ questions, PubMed articles, and MeSH terms
 - **Comprehensive Evaluation**: Non-LLM and LLM-based evaluation metrics
 - **Neo4j Integration**: Full graph database support with advanced querying
-- **Scalable Architecture**: Supports both CPU and GPU training/inference
 - **Extensible Design**: Modular architecture for easy addition of new techniques
 
 ## Folder Structure
@@ -256,13 +255,6 @@ python src/run_gat_evaluation.py
 ```
 
 ### **4. Hardware Recommendations**
-
-#### **Minimum Requirements:**
-- **CPU**: 4+ cores
-- **RAM**: 16GB
-- **Storage**: 10GB free space
-- **GPU**: Optional (CPU training supported)
-
 #### **Recommended for Optimal Performance:**
 - **CPU**: 8+ cores (Intel i7/AMD Ryzen 7+)
 - **RAM**: 32GB+
@@ -290,23 +282,11 @@ python src/run_gat_evaluation.py
 ### **Basic Pipeline Execution:**
 ```python
 # Complete pipeline from data to evaluation
-python src/main.py  # Data preparation and loading
-python src/dual_projection_main.py  # Train projection model
+python src/main.py  # Data preparation and loading - graph construction and loading
+python src/graph_embeddings/gnn_train.py # Train the graph embedding constructor
+python src/gat_projection_model.py  # Train graph attention projection model
+python src/dual_projection_main.py  # Train dual projection model
 python src/run_dual_projection_evaluation.py  # Evaluate model
-```
-
-### **Jupyter Notebook Exploration:**
-```bash
-# Interactive exploration and experimentation
-jupyter notebook src/experiments_notebook.ipynb
-jupyter notebook src/gnn_experiments.ipynb
-```
-
-### **Visualization:**
-```python
-# Generate embedding visualizations
-python src/run_embeddings_visualization.py
-python src/visualize_embeddings_comparison.py
 ```
 
 ## Evaluation Metrics
