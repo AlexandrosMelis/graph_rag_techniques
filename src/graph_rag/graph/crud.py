@@ -1,10 +1,7 @@
-import json
-import os
 import re
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
-from neo4j import GraphDatabase
 from neo4j.exceptions import Neo4jError
 
 from graph_rag.graph.connection import Neo4jConnection
@@ -46,7 +43,7 @@ class GraphCrud:
             print(f"Read {len(records)} rows. Cypher={cypher}")
             return records
         except Neo4jError as e:
-            print(f"Read failed: {e}\nCypher={cypher}\nParams={params}", exc_info=True)
+            print(f"Read failed: {e}\nCypher={cypher}\nParams={params}")
             raise
 
     def _execute_write(self, work) -> Any:
@@ -56,9 +53,9 @@ class GraphCrud:
         """
         try:
             with self._driver.session() as session:
-                return session.write_transaction(work)
+                return session.execute_write(work)
         except Neo4jError as e:
-            print(f"Write failed: {e}", exc_info=True)
+            print(f"Write failed: {e}")
             raise
 
     # ─── Node Operations ─────────────────────────────────────────────────
@@ -196,7 +193,6 @@ class GraphCrud:
         if not rels_data:
             return 0
 
-        total_created = 0
         by_type = defaultdict(list)
         for r in rels_data:
             rt = r.get("rel_type")
@@ -322,6 +318,14 @@ class GraphCrud:
             "RETURN elementId(n) AS id, n.`{}` AS `{}`"
         ).format(label, property_name, property_name, property_name)
         return self._execute_read(cy)
+
+    def run_batched_write(
+        self, cypher: str, rows: List[Dict[str, Any]], batch_size: int = 1000, **params
+    ) -> None:
+        """Run `UNWIND $rows AS row ...` in batches inside write transactions."""
+        for start in range(0, len(rows), batch_size):
+            batch = rows[start : start + batch_size]
+            self._execute_write(lambda tx: tx.run(cypher, rows=batch, **params).consume())
 
     def run_query(self, cypher: str, **params) -> List[Dict[str, Any]]:
         """Expose ad-hoc read-only Cypher."""
