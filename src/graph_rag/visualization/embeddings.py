@@ -1,62 +1,25 @@
 import os
-import numpy as np
+from typing import List, Tuple
+
 import matplotlib.pyplot as plt
+import numpy as np
 from sklearn.manifold import TSNE
 from sklearn.preprocessing import StandardScaler
-import seaborn as sns
-from graphdatascience import GraphDataScience
-from typing import List, Tuple, Optional
-import pandas as pd
 
-from graph_rag.config import ConfigEnv
+from graph_rag.config import ConfigPath
+from graph_rag.index.corpus_index import CorpusIndex
 
 
-def connect_to_neo4j() -> GraphDataScience:
-    """Connect to Neo4j database using GDS client."""
-    return GraphDataScience(
-        ConfigEnv.NEO4J_URI, 
-        auth=(ConfigEnv.NEO4J_USER, ConfigEnv.NEO4J_PASSWORD), 
-        database=ConfigEnv.NEO4J_DB
-    )
-
-
-def fetch_sample_embeddings(gds: GraphDataScience, sample_size: int = 100) -> Tuple[np.ndarray, np.ndarray, List[str]]:
-    """
-    Fetch sample of nodes with both BERT and graph embeddings from Neo4j.
-    
-    Args:
-        gds: GraphDataScience client
-        sample_size: Number of samples to fetch
-        
-    Returns:
-        Tuple of (bert_embeddings, graph_embeddings, node_texts)
-    """
-    print(f"Fetching {sample_size} samples with both BERT and graph embeddings...")
-    
-    # Cypher query to get nodes with both embedding types
-    cypher_query = """
-    MATCH (n:CONTEXT)
-    WHERE n.embedding IS NOT NULL AND n.graph_embedding IS NOT NULL
-    RETURN n.text as text, n.embedding as bert_embedding, n.graph_embedding as graph_embedding
-    LIMIT $sample_size
-    """
-    
-    result = gds.run_cypher(cypher_query, params={"sample_size": sample_size})
-    
-    if result.empty:
-        raise ValueError("No nodes found with both BERT and graph embeddings. Please ensure embeddings are computed.")
-    
-    print(f"Successfully fetched {len(result)} samples")
-    
-    # Extract embeddings and texts
-    bert_embeddings = np.array(result['bert_embedding'].tolist())
-    graph_embeddings = np.array(result['graph_embedding'].tolist())
-    texts = result['text'].tolist()
-    
-    print(f"BERT embeddings shape: {bert_embeddings.shape}")
-    print(f"Graph embeddings shape: {graph_embeddings.shape}")
-    
-    return bert_embeddings, graph_embeddings, texts
+def load_sample_embeddings(
+    index_dir: str = ConfigPath.INDEX_DIR, sample_size: int = 100, seed: int = 42
+) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+    """Sample chunks that have both a text embedding and a GNN embedding."""
+    index = CorpusIndex.load(index_dir)
+    if index.graph_embeddings is None:
+        raise ValueError("No graph embeddings in the index; run `python -m graph_rag.pipelines.train_gnn`.")
+    rng = np.random.default_rng(seed)
+    rows = rng.choice(index.n, size=min(sample_size, index.n), replace=False)
+    return index.embeddings[rows], index.graph_embeddings[rows], index.texts[rows].tolist()
 
 
 def apply_tsne_reduction(
@@ -127,7 +90,7 @@ def create_comparison_plot(
     colors_graph = graph_tsne[:, 1]  # Use y-coordinate for coloring
     
     # Plot BERT embeddings
-    scatter1 = ax1.scatter(
+    ax1.scatter(
         bert_tsne[:, 0], bert_tsne[:, 1], 
         c=colors_bert, 
         cmap='viridis', 
@@ -142,7 +105,7 @@ def create_comparison_plot(
     ax1.grid(True, alpha=0.3)
     
     # Plot Graph embeddings
-    scatter2 = ax2.scatter(
+    ax2.scatter(
         graph_tsne[:, 0], graph_tsne[:, 1], 
         c=colors_graph, 
         cmap='plasma', 
@@ -172,7 +135,7 @@ def create_comparison_plot(
     print(f"Plot saved as: {save_path}")
     
     # Show the plot
-    plt.show()
+    plt.close()
 
 
 def create_overlay_plot(
@@ -232,7 +195,7 @@ def create_overlay_plot(
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight', facecolor='white')
     print(f"Overlay plot saved as: {save_path}")
-    plt.show()
+    plt.close()
 
 
 def analyze_embedding_distances(
@@ -258,11 +221,11 @@ def analyze_embedding_distances(
     bert_distances = pdist(bert_embeddings)
     graph_distances = pdist(graph_embeddings)
     
-    print(f"Original BERT embeddings:")
+    print("Original BERT embeddings:")
     print(f"  Mean pairwise distance: {np.mean(bert_distances):.4f}")
     print(f"  Std pairwise distance: {np.std(bert_distances):.4f}")
     
-    print(f"Original Graph embeddings:")
+    print("Original Graph embeddings:")
     print(f"  Mean pairwise distance: {np.mean(graph_distances):.4f}")
     print(f"  Std pairwise distance: {np.std(graph_distances):.4f}")
     
@@ -270,11 +233,11 @@ def analyze_embedding_distances(
     bert_tsne_distances = pdist(bert_tsne)
     graph_tsne_distances = pdist(graph_tsne)
     
-    print(f"t-SNE BERT embeddings:")
+    print("t-SNE BERT embeddings:")
     print(f"  Mean pairwise distance: {np.mean(bert_tsne_distances):.4f}")
     print(f"  Std pairwise distance: {np.std(bert_tsne_distances):.4f}")
     
-    print(f"t-SNE Graph embeddings:")
+    print("t-SNE Graph embeddings:")
     print(f"  Mean pairwise distance: {np.mean(graph_tsne_distances):.4f}")
     print(f"  Std pairwise distance: {np.std(graph_tsne_distances):.4f}")
     
@@ -284,7 +247,7 @@ def analyze_embedding_distances(
     bert_corr, _ = pearsonr(bert_distances, bert_tsne_distances)
     graph_corr, _ = pearsonr(graph_distances, graph_tsne_distances)
     
-    print(f"Distance preservation (correlation):")
+    print("Distance preservation (correlation):")
     print(f"  BERT: {bert_corr:.4f}")
     print(f"  Graph: {graph_corr:.4f}")
     
@@ -302,11 +265,7 @@ def main(sample_size: int = 100, perplexity: int = 30):
     print("=== BERT vs Graph Embeddings Comparison ===")
     
     try:
-        # Connect to Neo4j
-        gds = connect_to_neo4j()
-        
-        # Fetch sample embeddings
-        bert_embeddings, graph_embeddings, texts = fetch_sample_embeddings(gds, sample_size)
+        bert_embeddings, graph_embeddings, texts = load_sample_embeddings(sample_size=sample_size)
         
         # Apply t-SNE reduction
         bert_tsne, graph_tsne = apply_tsne_reduction(
@@ -314,9 +273,8 @@ def main(sample_size: int = 100, perplexity: int = 30):
         )
         
         # Create visualizations
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        comparison_path = os.path.join(current_dir, "bert_vs_graph_embeddings_comparison.png")
-        overlay_path = os.path.join(current_dir, "bert_vs_graph_embeddings_overlay.png")
+        comparison_path = os.path.join(ConfigPath.OUTPUT_DIR, "bert_vs_graph_embeddings_comparison.png")
+        overlay_path = os.path.join(ConfigPath.OUTPUT_DIR, "bert_vs_graph_embeddings_overlay.png")
         
         create_comparison_plot(bert_tsne, graph_tsne, texts, comparison_path)
         create_overlay_plot(bert_tsne, graph_tsne, overlay_path)
@@ -325,7 +283,7 @@ def main(sample_size: int = 100, perplexity: int = 30):
         analyze_embedding_distances(bert_embeddings, graph_embeddings, bert_tsne, graph_tsne)
         
         print("=== Analysis Complete ===")
-        print(f"Generated plots:")
+        print("Generated plots:")
         print(f"  - {comparison_path}")
         print(f"  - {overlay_path}")
         
