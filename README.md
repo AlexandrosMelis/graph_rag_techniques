@@ -117,68 +117,127 @@ flowchart LR
 
 ```
 graph_rag_techniques/
-├── pyproject.toml / uv.lock      # dependencies (uv), tool config
+├── pyproject.toml / uv.lock      # dependencies (uv), `graph-rag` entry point, tool config
+├── docker-compose.yml            # Temporal, MLflow, optional Neo4j
+├── .pre-commit-config.yaml       # ruff, uv lock check, hygiene hooks
+├── .github/workflows/ci.yml      # lint + tests on every PR
 ├── src/graph_rag/
-│   ├── config.py                 # env vars (checked lazily) and data paths
+│   ├── cli.py                    # `graph-rag` command line
+│   ├── config.py                 # typed settings (pydantic-settings, .env)
+│   ├── tracking.py               # MLflow runs, metrics and artifacts
+│   ├── hub.py                    # Hugging Face Hub push/pull of trained artifacts
+│   ├── pipelines/                # prepare_data, build_index, training, evaluation run() functions
+│   ├── orchestration/            # Temporal workflows, activities, worker, client
 │   ├── data/                     # dataset download, splits, chunking, PubMed client, entity extraction
 │   ├── index/                    # CorpusIndex, CorpusGraph, entity linker
 │   ├── retrieval/                # retrievers + factory (named retrievers, dev tuning)
 │   ├── models/                   # query adapter, graph re-ranker, losses
 │   ├── gnn/                      # GNN node encoder (link prediction) for the RQ0 experiments
-│   ├── evaluation/               # metrics, runner, paired tests, RAG answerer, RAGAS
+│   ├── evaluation/               # metrics, runner, paired tests, traced RAG answerer, RAGAS
 │   ├── graph/                    # Neo4j connection and exporter (exploration only)
 │   ├── llm/                      # embedding model, cross-encoder, chat models
 │   ├── visualization/            # t-SNE of text vs graph embeddings
-│   ├── experiments/              # exploration helpers
-│   └── pipelines/                # entry points, run with `python -m`
-└── tests/                        # offline tests on a toy corpus with a fake encoder
+│   └── experiments/              # exploration helpers
+└── tests/                        # offline tests (toy corpus, fake encoder, local Temporal server)
 ```
 
 ## Setup
 
-Requirements: Python 3.10 to 3.12 and [uv](https://docs.astral.sh/uv/). A GPU (CUDA or Apple MPS) speeds up embedding but isn't required. Neo4j is only needed for `--export-neo4j`.
+Requirements: Python 3.10 to 3.12, [uv](https://docs.astral.sh/uv/), and Docker for the optional services. A GPU (CUDA or Apple MPS) speeds up embedding but isn't required.
 
 ```bash
 uv sync                          # add `--extra entities` for GLiNER
 cp .env.example .env             # ENTREZ_EMAIL is needed for MeSH entities
+uv run pre-commit install        # ruff + lockfile checks on commit
 uv run pytest
+docker compose up -d             # Temporal (UI :8233) and MLflow (UI :5050); `--profile neo4j` adds Neo4j
 ```
+
+The pipelines run without any of the services: tracking falls back to a local SQLite MLflow store under `data/mlflow/`, and Temporal is only used by the `workflow` commands.
 
 ## Running
 
+Everything goes through the `graph-rag` CLI (`uv run graph-rag --help`). Training options can be overridden with `-p key=value`.
+
 ```bash
 # 1. data: pinned download + train/dev/test splits
-uv run python -m graph_rag.pipelines.prepare_data
+uv run graph-rag data prepare
 
 # 2. index: chunks, embeddings, entity graph (MeSH via NCBI Entrez, cached and resumable)
-uv run python -m graph_rag.pipelines.build_index --entities mesh
-#    other embedders: --embedding-model Qwen/Qwen3-Embedding-0.6B --query-prompt-name query
+uv run graph-rag index build --entities mesh
+#    other embedders: --embedding-model Qwen/Qwen3-Embedding-0.6B -p query_prompt_name=query
 #    RQ0 ablation edges: --knn-k 10      general-domain entities: --entities gliner
 
 # 3. learned components (train split, checkpoint picked on dev)
-uv run python -m graph_rag.pipelines.train_query_adapter
-uv run python -m graph_rag.pipelines.train_graph_reranker --edge-types entity,next
-uv run python -m graph_rag.pipelines.train_gnn --edge-types entity        # RQ0: compare with --edge-types knn
+uv run graph-rag train adapter -p epochs=20
+uv run graph-rag train reranker --edge-types entity,next
+uv run graph-rag train gnn --edge-types entity      # RQ0: compare with --edge-types knn
 
 # 4. evaluation (use --split dev while iterating; test once at the end)
-uv run python -m graph_rag.pipelines.evaluate_retrieval --split dev \
+uv run graph-rag evaluate retrieval --split dev \
     --retrievers bm25,dense,hybrid,dense_adapter,ppr,graph_reranker
-uv run python -m graph_rag.pipelines.evaluate_retrieval --split test --tune \
+uv run graph-rag evaluate retrieval --split test --tune \
     --retrievers dense,hybrid,hybrid_ce,dense_adapter,ppr,expand,entity,graph_reranker
-uv run python -m graph_rag.pipelines.evaluate_rag --retriever hybrid --n 50
+uv run graph-rag evaluate rag --retriever hybrid --n 50
 ```
 
 Results go to `data/results/<run>/`: `summary.md` (comparison table), one `*_summary.json` per retriever (metrics, confidence intervals, latency, recall ceiling, paired test against the baseline) and per-query CSVs.
 
-`train_gnn` prints the zero-parameter baseline next to the GNN, i.e. the AUC of cosine(x_i, x_j) on the same held-out edges. On kNN edges that baseline is about 1.0, and the GNN can't learn anything the embedding didn't already contain.
+`train gnn` prints the zero-parameter baseline next to the GNN, i.e. the AUC of cosine(x_i, x_j) on the same held-out edges. On kNN edges that baseline is about 1.0, and the GNN can't learn anything the embedding didn't already contain.
+
+### Experiment tracking (MLflow)
+
+Every command opens an MLflow run with its parameters, per-epoch metrics, final metrics and outputs as artifacts; `evaluate retrieval` logs one nested run per retriever. `evaluate rag` also records traces: a retrieval span with the retrieved passages and the LLM calls (LangChain autolog), so bad answers can be traced back to the passages behind them.
+
+```bash
+export MLFLOW_TRACKING_URI=http://localhost:5050   # docker compose server; unset = local SQLite
+```
+
+### Durable runs (Temporal)
+
+Long jobs (hours of rate-limited NCBI calls, corpus embedding, training) run as Temporal workflows. A crashed or restarted worker resumes at the failed step, activities heartbeat their progress, and configuration errors fail fast instead of retrying.
+
+```mermaid
+flowchart LR
+    subgraph IndexCorpusWorkflow
+        p["prepare_data"] --> m["fetch_mesh_headings<br/>(if entities=mesh)"] --> b["build_index"]
+    end
+    subgraph ExperimentWorkflow
+        g["train gnn<br/>(rewrites index)"] --> a["train adapter"]
+        g --> r["train reranker"]
+        a --> e["evaluate_retrieval"]
+        r --> e
+    end
+```
+
+```bash
+uv run graph-rag workflow worker                       # keep running; one per machine
+uv run graph-rag workflow index -p entities=mesh --wait
+uv run graph-rag workflow experiment --train gnn,adapter,reranker --split dev --wait
+```
+
+Progress is visible in the Temporal UI at http://localhost:8233.
+
+### Sharing models (Hugging Face Hub)
+
+```bash
+uv run graph-rag hub push data/models/query_adapter_semantic <user>/graph-rag-adapter   # private by default
+uv run graph-rag evaluate retrieval --retrievers dense_adapter --adapter hf://<user>/graph-rag-adapter
+```
+
+`push` writes a model card from the saved config and dev results. Any model directory option accepts `hf://<user>/<repo>[@revision]`.
 
 ## Environment
 
 | Variable | Needed for |
 |---|---|
-| `ENTREZ_EMAIL`, `ENTREZ_API_KEY` (optional, raises the rate limit) | `build_index --entities mesh` |
-| `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_PUBMED_DATABASE` | `build_index --export-neo4j` |
-| `GOOGLE_API_KEY` / `GROQ_API_KEY` | `evaluate_rag` |
+| `ENTREZ_EMAIL`, `ENTREZ_API_KEY` (optional, raises the rate limit) | `index build --entities mesh`, `index fetch-mesh` |
+| `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE` | `index build --export-neo4j` |
+| `GOOGLE_API_KEY` / `GROQ_API_KEY` | `evaluate rag` |
+| `MLFLOW_TRACKING_URI`, `GRAPH_RAG_MLFLOW_EXPERIMENT`, `GRAPH_RAG_TRACKING` | tracking server, experiment name, on/off |
+| `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, `TEMPORAL_TASK_QUEUE` | `workflow` commands |
+| `HF_TOKEN` | `hub push` and private `hf://` artifacts |
+| `GRAPH_RAG_DATA_DIR` | where data, indexes, models and results live (default `./data`) |
 
 ## Data
 

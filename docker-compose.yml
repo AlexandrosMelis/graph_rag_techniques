@@ -1,0 +1,49 @@
+# Local infrastructure. `docker compose up -d` starts Temporal and MLflow;
+# add `--profile neo4j` for the graph browser. The Python code runs on the host (uv).
+name: graph-rag
+
+services:
+  temporal:
+    image: temporalio/temporal:1.9.1
+    # The image runs as uid 1000; mounting at its home keeps the SQLite file writable.
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--db-filename", "/home/temporal/temporal.db"]
+    ports:
+      - "7233:7233"   # gRPC frontend (TEMPORAL_ADDRESS=localhost:7233)
+      - "8233:8233"   # web UI
+    volumes:
+      - temporal-data:/home/temporal
+    restart: unless-stopped
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.16.1
+    command:
+      - mlflow
+      - server
+      - --host=0.0.0.0
+      - --port=5000
+      - --backend-store-uri=sqlite:////mlflow/mlflow.db
+      - --artifacts-destination=/mlflow/artifacts
+    ports:
+      # 5050 on the host: macOS AirPlay Receiver already listens on 5000.
+      - "${MLFLOW_PORT:-5050}:5000"   # UI + API (MLFLOW_TRACKING_URI=http://localhost:5050)
+    volumes:
+      - mlflow-data:/mlflow
+    restart: unless-stopped
+
+  neo4j:
+    image: neo4j:5.26.31-community
+    profiles: ["neo4j"]
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-change-me-please}   # local dev only; set NEO4J_PASSWORD in .env
+      NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
+    ports:
+      - "7474:7474"   # browser
+      - "7687:7687"   # bolt
+    volumes:
+      - neo4j-data:/data
+    restart: unless-stopped
+
+volumes:
+  temporal-data:
+  mlflow-data:
+  neo4j-data:
