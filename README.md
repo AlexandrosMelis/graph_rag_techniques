@@ -16,7 +16,7 @@ What exists now, in three merged pieces:
 2. **Method** (`fix/critical-major-issues`): fixed corpus and question-level splits, chunk/entity graph without labels, BM25 / dense / hybrid / cross-encoder baselines, in-process PPR and expansion, an identity-initialised query adapter, a query-conditioned graph re-ranker, an honest GNN pretext task, corrected metrics with paired tests and latency.
 3. **Tooling** (`feat/modern-tooling`): `graph-rag` CLI, MLflow tracking and tracing, Temporal workflows for the long runs, Hugging Face Hub sharing, docker compose, pre-commit and CI.
 
-**No experiment has been run with the new code yet.** The full plan, phase by phase with checkboxes, is in [docs/ROADMAP.md](docs/ROADMAP.md). The first phase is the baselines and the RQ0 result on BioASQ; it needs roughly a day of compute on a laptop.
+**No experiment has been run with the new code yet.** The full plan, phase by phase with checkboxes, is in [docs/ROADMAP.md](docs/ROADMAP.md). Phase 0 turns the code into a corpus-agnostic framework driven by YAML corpus profiles (sources, id fields, entity extractors, models, prompts), with BioASQ as one profile next to BEIR datasets and local files. Phase 1 is then the baselines and the RQ0 result.
 
 ## Research questions
 

@@ -16,7 +16,106 @@ Each phase ends with something that can go into the thesis as is.
 | Tooling: CLI, MLflow, Temporal, Hub, CI | done |
 | Numbers | **none yet**. No result in this repo has been produced with the current code. |
 
-Everything below is ordered by how much it de-risks the thesis.
+Everything below is ordered by how much it de-risks the thesis. Phase 0 is the generalisation of the framework itself and runs first, so that every experiment after it is produced by corpus-agnostic code.
+
+## Phase 0: corpus profiles, so biomedical is one case, not the framework (2 to 3 weeks)
+
+The goal of the project is a general graph-augmented retrieval framework that a community can use on its own corpus. BioASQ / PubMed is the first case study, but today it leaks into the code in at least these places:
+
+| Hardcoded now | Where |
+|---|---|
+| One dataset, one HF repo, one file layout | `data/bioasq.py`, `pipelines/prepare_data.py` |
+| `pmid` as the document id (92 occurrences across 18 modules) | `Hit`, `CorpusIndex`, `Question`, evaluation result keys |
+| MeSH entities via NCBI, biomedical GLiNER labels, MeSH check tags | `data/entities.py`, `data/pubmed.py`, `pipelines/build_index.py` |
+| PubMedBERT and MedCPT defaults | `llm/embeddings.py`, `llm/reranker.py` |
+| "You are a biomedical expert" prompt | `evaluation/rag.py` |
+| `--entities mesh\|gliner\|none` as a closed list | CLI, `IndexConfig` |
+| One `data/` tree, so one corpus per checkout | `config.py` |
+
+This phase comes **before** Phase 1: the experiments should be run once, on the general code, so BioASQ numbers are produced the same way as everything that follows.
+
+### Design: a corpus profile is a YAML file
+
+Everything corpus-specific lives in one declarative profile. Built-in profiles ship in `src/graph_rag/profiles/` (`bioasq.yaml`, `beir-scifact.yaml`, `beir-fiqa.yaml`, `local-jsonl.yaml` as a template); users point at their own with `--corpus path/to/profile.yaml`. The Python code never mentions PubMed, MeSH or PMIDs outside the plugins that implement them.
+
+```yaml
+name: bioasq
+description: BioASQ questions over PubMed abstracts (rag-mini-bioasq)
+
+source:                      # where documents and questions come from
+  type: huggingface          # huggingface | beir | local
+  repo_id: enelpol/rag-mini-bioasq
+  revision: 8a845907dc1cff31d42fa6f7bb9c6eef5f3ae6f6   # pinned, always
+  corpus:
+    file: text-corpus/test-00000-of-00001.parquet
+    id_field: id
+    text_field: passage
+    title_field: null        # prepended to the first chunk when set
+    metadata_fields: []      # kept alongside the corpus (tags, authors, year, citations...)
+  questions:                 # optional; a corpus can be indexed and queried without any
+    splits:
+      train: question-answer-passages/train-00000-of-00001.parquet
+      test: question-answer-passages/test-00000-of-00001.parquet
+    id_field: id
+    question_field: question
+    answer_field: answer     # optional (BEIR has none: retrieval-only evaluation)
+    relevant_ids_field: relevant_passage_ids
+
+splits:
+  dev_fraction: 0.1          # carved from train when the source has no dev split
+  seed: 42
+
+chunking:
+  size: 384
+  overlap: 64
+  prepend_title: true
+
+embedding:
+  model: neuml/pubmedbert-base-embeddings
+  query_prompt_name: null    # "query" for Qwen3-Embedding / EmbeddingGemma
+  query_prefix: ""           # "query: " for E5-style models
+  document_prefix: ""
+
+reranker:
+  cross_encoder: ncbi/MedCPT-Cross-Encoder
+
+entities:                    # ordered list of extractor plugins; rows are unioned
+  - type: mesh               # built-in: PubMed MeSH headings via NCBI (needs ENTREZ_EMAIL)
+    drop_check_tags: true
+  - type: gliner             # built-in: zero-shot NER, any domain
+    labels: [disease, gene, protein, chemical, drug]
+    threshold: 0.5
+  # - type: metadata         # built-in: entities from a metadata column (tags, categories, authors)
+  #   field: tags
+  # - type: my_package.extractors:PatentClassifier   # any importable class with .extract(chunks)
+  stop_entities: []          # dropped after normalisation
+  max_entity_df: 0.05        # hub entities above this document frequency are dropped
+
+graph:
+  edges: [entity, next]      # entity | next | link | knn
+  link_fields: []            # metadata fields holding ids of related documents (citations, "see also")
+  knn_k: 0                   # embedding kNN edges, ablation only
+
+generation:
+  system_prompt: "You are a biomedical expert. Answer using only the numbered context passages."
+```
+
+A BEIR profile is the same schema with `source.type: beir` and `repo_id: BeIR/scifact`: the loader knows the BEIR layout (`corpus`/`queries` configs, `<repo>-qrels` with `train.tsv`/`dev.tsv`/`test.tsv`, columns `_id`, `title`, `text`, `query-id`, `corpus-id`, `score`). That single loader covers scifact, nfcorpus, fiqa, hotpotqa, nq, msmarco and the rest of the benchmark. `source.type: local` reads parquet / jsonl / csv files from disk with the same field mapping, which is the "bring your own corpus" path.
+
+### Work items
+
+- [ ] `data/profile.py`: `CorpusProfile` pydantic model, YAML loading, built-in profile lookup by name, validation errors that name the field.
+- [ ] `data/sources/`: `huggingface` (pinned files with a field mapping), `beir`, `local`. Each returns the same two things: a corpus DataFrame (`doc_id`, `text`, `title`, metadata columns) and `Question` lists per available split. Splits logic handles any subset of train/dev/test (dev carved from train when missing; no train means evaluation only, with a clear warning).
+- [ ] Rename `pmid` to `doc_id` everywhere: `Hit`, `CorpusIndex.doc_ids`, `Question.relevant_ids`, result keys `true_ids` / `retrieved_ids`, split files. Nothing has been generated with the current names, so no migration is needed.
+- [ ] Entity extractor registry: `type` resolves to a built-in (`mesh`, `gliner`, `metadata`) or a dotted import path; each extractor is built from its profile block plus the corpus DataFrame and the corpus paths (the MeSH one needs the cache directory). Move MeSH and PubMed code under `data/plugins/pubmed/` so the biomedical case is visibly a plugin.
+- [ ] `link` edge type in `CorpusGraph`: doc-to-doc references from `graph.link_fields`, mapped to chunk-chunk edges, exported to Neo4j as `LINKS_TO`.
+- [ ] Profile-driven defaults: embedding model, query/document prompts, cross-encoder, chunking, graph edges and RAG prompt all read from the profile; CLI flags only override. Generic profile defaults use general-domain models (`BAAI/bge-small-en-v1.5` / `BAAI/bge-reranker-v2-m3`), not the biomedical ones.
+- [ ] Per-corpus data layout: `data/<corpus>/{raw,splits,index,models,results}`; `GRAPH_RAG_CORPUS` env var and a global `graph-rag --corpus NAME_OR_PATH` option select the profile; MLflow runs tagged with the corpus; Temporal inputs carry the profile reference.
+- [ ] `graph-rag corpus validate <profile>`: loads the profile, downloads or opens the source, prints document/question counts, id overlap between splits, gold coverage, and which entity extractors are runnable with the current environment.
+- [ ] Tests: profile parsing and validation, each source type on tiny fixture files, the `metadata` extractor, `link` edges, and one end-to-end `data prepare` + `index build` + `evaluate retrieval` on a 20-document local corpus with no biomedical dependency installed.
+- [ ] Docs: README repositioned as a general framework with BioASQ and SciFact as the two worked examples; a "Bring your own corpus" page with the local-files profile walkthrough; a "Writing an entity extractor" page.
+
+Deliverable: `graph-rag --corpus beir-scifact data prepare && graph-rag --corpus beir-scifact index build && graph-rag --corpus beir-scifact evaluate retrieval` runs without touching any biomedical code, and the BioASQ profile produces the same index as today.
 
 ## Phase 1: first honest numbers (1 to 2 weeks)
 
@@ -84,7 +183,8 @@ Deliverable: cost chapter.
 
 ## Decisions already made
 
-- The corpus is the dataset's own passage collection, fixed and independent of the evaluated questions. Never rebuild it from gold PMIDs.
+- The corpus is the dataset's own document collection, fixed and independent of the evaluated questions. Never rebuild it from gold document ids.
+- Corpus-specific knowledge (ids, entity sources, models, prompts) lives in a profile file or a plugin, never in the core package. Biomedical is one profile among several.
 - Questions and relevance labels live only in `data/splits/`; nothing about them goes into the index, the graph, or Neo4j.
 - Graph edges must carry information the text embedding does not. kNN edges are an ablation, not a feature.
 - Retrieval is scored per PMID; chunks collapse to their passage's best rank.
