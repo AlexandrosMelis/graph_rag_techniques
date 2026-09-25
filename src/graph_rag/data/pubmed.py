@@ -5,13 +5,14 @@ list of PMIDs, with retries and an on-disk cache so interrupted runs resume.
 
 import json
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import Optional
 
 from Bio import Entrez, Medline
 from tqdm import tqdm
 
-from graph_rag.config import ConfigEnv
+from graph_rag.config import settings
 from graph_rag.data.entities import clean_mesh_term
 
 
@@ -33,10 +34,12 @@ class PubMedClient:
         max_retries: int = 4,
     ):
         if email is None:
-            ConfigEnv.require("ENTREZ_EMAIL")
-            email = ConfigEnv.ENTREZ_EMAIL
+            settings.require("entrez_email")
+            email = settings.entrez_email
+        if api_key is None and settings.entrez_api_key is not None:
+            api_key = settings.entrez_api_key.get_secret_value()
         Entrez.email = email
-        Entrez.api_key = api_key or ConfigEnv.ENTREZ_API_KEY
+        Entrez.api_key = api_key or None
         self.batch_size = batch_size
         self.max_retries = max_retries
 
@@ -64,7 +67,10 @@ class PubMedClient:
         return records
 
     def fetch_mesh_headings(
-        self, pmids: Iterable[str], cache_path: str | Path | None = None
+        self,
+        pmids: Iterable[str],
+        cache_path: str | Path | None = None,
+        progress: Optional[Callable[[int, int], None]] = None,
     ) -> dict[str, list[str]]:
         """
         Return {pmid: [MeSH heading, ...]}. With `cache_path`, results are appended to a
@@ -90,4 +96,6 @@ class PubMedClient:
                 with open(cache_path, "a", encoding="utf-8") as f:
                     for row in rows:
                         f.write(json.dumps(row) + "\n")
+            if progress:
+                progress(min(start + self.batch_size, len(todo)), len(todo))
         return headings

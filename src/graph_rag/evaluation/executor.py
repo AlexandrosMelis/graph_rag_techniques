@@ -1,7 +1,7 @@
 import json
 import os
 import time
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -26,13 +26,18 @@ def run_retrieval(
     top_k: int = 10,
     output_dir: Optional[str] = None,
     show_progress: bool = True,
+    progress: Optional[Callable[[str], None]] = None,
 ) -> list[dict]:
     """
     Run the retriever on every question and collapse chunk hits to ranked PMIDs.
     Retriever errors propagate: a crash must never be scored as an empty ranking.
     """
     results = []
-    for q in tqdm(questions, desc=f"Retrieving [{retriever.name}]", disable=not show_progress):
+    for i, q in enumerate(
+        tqdm(questions, desc=f"Retrieving [{retriever.name}]", disable=not show_progress), start=1
+    ):
+        if progress and i % 25 == 0:
+            progress(f"{retriever.name}: {i}/{len(questions)} queries")
         start = time.perf_counter()
         hits = retriever.retrieve(q.question, top_k=top_k * CHUNK_OVERSAMPLING)
         latency_ms = (time.perf_counter() - start) * 1000

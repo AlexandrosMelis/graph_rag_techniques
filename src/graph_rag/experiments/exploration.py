@@ -15,7 +15,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from graph_rag.config import ConfigPath
+from graph_rag.config import settings
 from graph_rag.data.bioasq import load_questions
 from graph_rag.data.pubmed import PubMedClient
 
@@ -25,7 +25,7 @@ def preview_questions(split: str = "train", n: int = 3) -> list[dict]:
     return [q.to_dict() for q in load_questions(split)[:n]]
 
 
-def link_query_entities(question: str, index_dir: str = ConfigPath.INDEX_DIR) -> list[dict]:
+def link_query_entities(question: str, index_dir: str = settings.index_dir) -> list[dict]:
     """Entities of the corpus graph that the linker attaches to a question, with weights."""
     from graph_rag.index.corpus_index import CorpusIndex
     from graph_rag.index.graph import CorpusGraph

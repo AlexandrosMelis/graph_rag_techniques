@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass
-from typing import Callable
+from typing import Callable, Optional
 
 import torch
 import torch.nn.functional as F
@@ -42,6 +42,7 @@ def train_link_prediction(
     test: Data,
     config: GNNTrainingConfig = GNNTrainingConfig(),
     log: Callable[[str], None] = print,
+    on_epoch: Optional[Callable[[int, dict], None]] = None,
 ) -> tuple[GraphEncoder, dict]:
     """
     Link prediction with a feature-preservation term (1 - cos(z, x)). The checkpoint
@@ -89,6 +90,8 @@ def train_link_prediction(
             history["loss"].append(loss.item())
             history["val_auc"].append(val_auc)
             history["val_ap"].append(val_ap)
+            if on_epoch:
+                on_epoch(epoch, {"loss": loss.item(), "val_auc": val_auc, "val_ap": val_ap})
             log(f"epoch {epoch:04d} loss={loss.item():.4f} val AUC={val_auc:.4f} AP={val_ap:.4f}")
             if val_auc > best_auc:
                 best_auc, stale = val_auc, 0

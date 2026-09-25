@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from graph_rag.config import ConfigPath
+from graph_rag.config import settings
 
 DATASET_ID = "enelpol/rag-mini-bioasq"
 # Pinned so every run reads byte-identical data.
@@ -49,13 +49,13 @@ class Question:
         )
 
 
-def local_path(name: str, raw_dir: str | Path = ConfigPath.RAW_DATA_DIR) -> Path:
+def local_path(name: str, raw_dir: str | Path = settings.raw_dir) -> Path:
     prefix = "bioasq_corpus" if name == "corpus" else f"bioasq_{name}"
     return Path(raw_dir) / f"{prefix}.parquet"
 
 
 def download_dataset(
-    raw_dir: str | Path = ConfigPath.RAW_DATA_DIR,
+    raw_dir: str | Path = settings.raw_dir,
     revision: str = DATASET_REVISION,
     force: bool = False,
 ) -> dict[str, Path]:
@@ -75,7 +75,7 @@ def download_dataset(
     return paths
 
 
-def load_questions(split: str, raw_dir: str | Path = ConfigPath.RAW_DATA_DIR) -> list[Question]:
+def load_questions(split: str, raw_dir: str | Path = settings.raw_dir) -> list[Question]:
     """Load the official `train` or `test` questions."""
     if split not in ("train", "test"):
         raise ValueError(f"Unknown split {split!r}; the dataset ships 'train' and 'test'.")
@@ -91,7 +91,7 @@ def load_questions(split: str, raw_dir: str | Path = ConfigPath.RAW_DATA_DIR) ->
     ]
 
 
-def load_corpus(raw_dir: str | Path = ConfigPath.RAW_DATA_DIR) -> pd.DataFrame:
+def load_corpus(raw_dir: str | Path = settings.raw_dir) -> pd.DataFrame:
     """Load the passage corpus as a DataFrame with `pmid` and `text` columns."""
     df = pd.read_parquet(local_path("corpus", raw_dir))
     corpus = pd.DataFrame({"pmid": df["id"].astype(str), "text": df["passage"].astype(str)})

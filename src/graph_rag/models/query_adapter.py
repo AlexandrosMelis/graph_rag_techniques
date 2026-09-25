@@ -125,6 +125,7 @@ def train_query_adapter(
     config: AdapterTrainingConfig = AdapterTrainingConfig(),
     space: str = "semantic",
     log: Callable[[str], None] = print,
+    on_epoch: Optional[Callable[[int, dict], None]] = None,
 ) -> tuple[QueryAdapter, dict]:
     """
     Multi-positive InfoNCE over in-batch documents plus mined hard negatives. The
@@ -191,6 +192,8 @@ def train_query_adapter(
         history["loss"].append(float(np.mean(losses)))
         history["dev_recall"].append(recall)
         log(f"epoch {epoch}: loss={np.mean(losses):.4f} dev recall@{config.eval_k}={recall:.4f}")
+        if on_epoch:
+            on_epoch(epoch, {"loss": float(np.mean(losses)), "dev_recall": recall})
         if recall > best_recall:
             best_recall, stale = recall, 0
             best_state = {k: v.clone() for k, v in adapter.state_dict().items()}

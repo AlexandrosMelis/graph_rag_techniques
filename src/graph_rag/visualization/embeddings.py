@@ -6,12 +6,12 @@ import numpy as np
 from sklearn.manifold import TSNE
 from sklearn.preprocessing import StandardScaler
 
-from graph_rag.config import ConfigPath
+from graph_rag.config import settings
 from graph_rag.index.corpus_index import CorpusIndex
 
 
 def load_sample_embeddings(
-    index_dir: str = ConfigPath.INDEX_DIR, sample_size: int = 100, seed: int = 42
+    index_dir: str = settings.index_dir, sample_size: int = 100, seed: int = 42
 ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
     """Sample chunks that have both a text embedding and a GNN embedding."""
     index = CorpusIndex.load(index_dir)
@@ -273,8 +273,9 @@ def main(sample_size: int = 100, perplexity: int = 30):
         )
         
         # Create visualizations
-        comparison_path = os.path.join(ConfigPath.OUTPUT_DIR, "bert_vs_graph_embeddings_comparison.png")
-        overlay_path = os.path.join(ConfigPath.OUTPUT_DIR, "bert_vs_graph_embeddings_overlay.png")
+        settings.output_dir.mkdir(parents=True, exist_ok=True)
+        comparison_path = os.path.join(settings.output_dir, "bert_vs_graph_embeddings_comparison.png")
+        overlay_path = os.path.join(settings.output_dir, "bert_vs_graph_embeddings_overlay.png")
         
         create_comparison_plot(bert_tsne, graph_tsne, texts, comparison_path)
         create_overlay_plot(bert_tsne, graph_tsne, overlay_path)

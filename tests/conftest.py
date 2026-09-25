@@ -1,20 +1,26 @@
 import os
 import re
+import tempfile
 import zlib
 
 import numpy as np
 import pandas as pd
 import pytest
 
-# graph_rag.config reads these at import time; tests never talk to real services.
+# Settings are read at import time; tests use a throwaway data directory, never talk to
+# real services, and keep MLflow runs (when a test enables tracking) in a temp store.
+_TMP = tempfile.mkdtemp(prefix="graph-rag-tests-")
 for key, value in {
+    "GRAPH_RAG_DATA_DIR": os.path.join(_TMP, "data"),
+    "GRAPH_RAG_TRACKING": "false",
+    "MLFLOW_TRACKING_URI": f"sqlite:///{_TMP}/mlflow.db",
     "ENTREZ_EMAIL": "tests@example.com",
     "NEO4J_URI": "bolt://localhost:7687",
     "NEO4J_USER": "neo4j",
     "NEO4J_PASSWORD": "unused",
     "NEO4J_PUBMED_DATABASE": "unused",
 }.items():
-    os.environ.setdefault(key, value)
+    os.environ[key] = value
 
 from graph_rag.data.bioasq import Question  # noqa: E402
 from graph_rag.data.chunking import chunk_corpus  # noqa: E402

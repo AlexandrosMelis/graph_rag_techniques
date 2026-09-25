@@ -3,7 +3,7 @@ import random
 from dataclasses import dataclass
 from pathlib import Path
 
-from graph_rag.config import ConfigPath
+from graph_rag.config import settings
 from graph_rag.data.bioasq import Question
 
 SPLIT_NAMES = ("train", "dev", "test")
@@ -55,7 +55,7 @@ def assert_disjoint(splits: Splits) -> None:
                 seen[key] = name
 
 
-def save_splits(splits: Splits, splits_dir: str | Path = ConfigPath.SPLITS_DIR) -> None:
+def save_splits(splits: Splits, splits_dir: str | Path = settings.splits_dir) -> None:
     Path(splits_dir).mkdir(parents=True, exist_ok=True)
     for name in SPLIT_NAMES:
         with open(Path(splits_dir) / f"{name}.jsonl", "w", encoding="utf-8") as f:
@@ -63,7 +63,7 @@ def save_splits(splits: Splits, splits_dir: str | Path = ConfigPath.SPLITS_DIR) 
                 f.write(json.dumps(q.to_dict()) + "\n")
 
 
-def load_splits(splits_dir: str | Path = ConfigPath.SPLITS_DIR) -> Splits:
+def load_splits(splits_dir: str | Path = settings.splits_dir) -> Splits:
     loaded = {}
     for name in SPLIT_NAMES:
         path = Path(splits_dir) / f"{name}.jsonl"

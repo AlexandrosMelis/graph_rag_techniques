@@ -4,17 +4,18 @@ import itertools
 from pathlib import Path
 from typing import Any, Optional
 
-from graph_rag.config import ConfigPath
+from graph_rag.config import settings
 from graph_rag.data.bioasq import Question
 from graph_rag.evaluation.metrics import recall_at_k
+from graph_rag.hub import resolve_artifact
 from graph_rag.index.corpus_index import CorpusIndex
 from graph_rag.index.graph import CorpusGraph
 from graph_rag.index.linking import EntityLinker
 from graph_rag.retrieval.base import BaseRetriever, hits_to_pmids
 
-DEFAULT_ADAPTER_DIR = Path(ConfigPath.MODELS_DIR) / "query_adapter_semantic"
-DEFAULT_GRAPH_ADAPTER_DIR = Path(ConfigPath.MODELS_DIR) / "query_adapter_graph"
-DEFAULT_RERANKER_DIR = Path(ConfigPath.MODELS_DIR) / "graph_reranker"
+DEFAULT_ADAPTER_DIR = Path(settings.models_dir) / "query_adapter_semantic"
+DEFAULT_GRAPH_ADAPTER_DIR = Path(settings.models_dir) / "query_adapter_graph"
+DEFAULT_RERANKER_DIR = Path(settings.models_dir) / "graph_reranker"
 
 RETRIEVERS = {
     "bm25": "BM25 over chunk text",
@@ -57,17 +58,18 @@ class RetrieverFactory:
         index: CorpusIndex,
         encoder: Any,
         graph: Optional[CorpusGraph] = None,
-        adapter_dir: Path = DEFAULT_ADAPTER_DIR,
-        graph_adapter_dir: Path = DEFAULT_GRAPH_ADAPTER_DIR,
-        reranker_dir: Path = DEFAULT_RERANKER_DIR,
+        adapter_dir: str | Path = DEFAULT_ADAPTER_DIR,
+        graph_adapter_dir: str | Path = DEFAULT_GRAPH_ADAPTER_DIR,
+        reranker_dir: str | Path = DEFAULT_RERANKER_DIR,
         cross_encoder: Optional[str] = None,
     ):
         self.index = index
         self.encoder = encoder
         self.graph = graph
-        self.adapter_dir = Path(adapter_dir)
-        self.graph_adapter_dir = Path(graph_adapter_dir)
-        self.reranker_dir = Path(reranker_dir)
+        # Local directories or hf://<user>/<repo>[@revision] references.
+        self.adapter_dir = adapter_dir
+        self.graph_adapter_dir = graph_adapter_dir
+        self.reranker_dir = reranker_dir
         self.cross_encoder = cross_encoder
         self._cache: dict[str, Any] = {}
 
@@ -115,13 +117,13 @@ class RetrieverFactory:
             from graph_rag.models.query_adapter import QueryAdapter
             from graph_rag.retrieval.dense import DenseRetriever
 
-            adapter = QueryAdapter.load(self.adapter_dir)
+            adapter = QueryAdapter.load(resolve_artifact(self.adapter_dir))
             return DenseRetriever(self.index, self.encoder, adapter=adapter, name="dense_adapter")
         if name == "graph_space":
             from graph_rag.models.query_adapter import QueryAdapter
             from graph_rag.retrieval.dense import DenseRetriever
 
-            adapter = QueryAdapter.load(self.graph_adapter_dir)
+            adapter = QueryAdapter.load(resolve_artifact(self.graph_adapter_dir))
             return DenseRetriever(
                 self.index, self.encoder, adapter=adapter, space="graph", name="graph_space"
             )
@@ -162,7 +164,7 @@ class RetrieverFactory:
         )
         from graph_rag.retrieval.rerank import RerankingRetriever
 
-        model, config = GraphReranker.load(self.reranker_dir)
+        model, config = GraphReranker.load(resolve_artifact(self.reranker_dir))
         builder = CandidateGraphBuilder(
             self.index,
             self._require_graph(),
