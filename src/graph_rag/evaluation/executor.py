@@ -1,80 +1,114 @@
+import json
 import os
-from typing import Any, Literal, Tuple
+import time
+from typing import Optional, Sequence
 
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from graph_rag.retrieval.base import BaseRetriever
-from graph_rag.utils import save_json_file
+from graph_rag.data.bioasq import Question
+from graph_rag.evaluation.metrics import (
+    NonLLMRetrievalEvaluator,
+    paired_bootstrap_test,
+    per_query_scores,
+)
+from graph_rag.index.corpus_index import CorpusIndex
+from graph_rag.retrieval.base import BaseRetriever, hits_to_pmids
+
+# Chunks requested per wanted passage, so collapsing chunks to PMIDs still fills top_k.
+CHUNK_OVERSAMPLING = 3
 
 
 def run_retrieval(
-    source_data: list,
+    questions: Sequence[Question],
     retriever: BaseRetriever,
-    retriever_args: dict,
-    output_dir: str,
-) -> list:
+    top_k: int = 10,
+    output_dir: Optional[str] = None,
+    show_progress: bool = True,
+) -> list[dict]:
     """
-    Function responsible for running the provided retriever against the source data.
-    It saves the retrieved contexts and their metadata for further evaluation.
+    Run the retriever on every question and collapse chunk hits to ranked PMIDs.
+    Retriever errors propagate: a crash must never be scored as an empty ranking.
     """
     results = []
-    for example in tqdm(source_data, desc="Retrieving contexts..."):
-        example_id = example.get("id")
-        query = example.get("question")
-        true_pmids = example.get("relevant_passage_ids")
-
-        retrieved_contexts = retriever.retrieve(query=query, **retriever_args)
-        retrieved_pmids = [context["pmid"] for context in retrieved_contexts]
-        retrieved_scores = [context["score"] for context in retrieved_contexts]
-
+    for q in tqdm(questions, desc=f"Retrieving [{retriever.name}]", disable=not show_progress):
+        start = time.perf_counter()
+        hits = retriever.retrieve(q.question, top_k=top_k * CHUNK_OVERSAMPLING)
+        latency_ms = (time.perf_counter() - start) * 1000
+        pmids = hits_to_pmids(hits, top_k)
+        best_score = {}
+        for hit in hits:
+            best_score.setdefault(hit.pmid, hit.score)
         results.append(
             {
-                "id": example_id,
-                "query": query,
-                "true_pmids": true_pmids,
-                "retrieved_pmids": retrieved_pmids,
-                "retrieved_scores": retrieved_scores,
+                "id": q.id,
+                "query": q.question,
+                "true_pmids": list(q.relevant_pmids),
+                "retrieved_pmids": pmids,
+                "retrieved_scores": [best_score[p] for p in pmids],
+                "latency_ms": latency_ms,
             }
         )
-
-    # save results to csv
-    df = pd.DataFrame(results)
-    file_name = f"{retriever.name}_retrieval_results.csv"
-    df.to_csv(os.path.join(output_dir, file_name), index=False)
-
-    return results
-
-
-def collect_generated_answers(
-    source_data: list, retriever: Any, output_dir: str = None
-) -> list:
-    results = []
-    for sample in tqdm(source_data, desc="Collecting answers and chunks..."):
-        sample_id = sample.get("id")
-        user_input = sample.get("question")
-        reference = sample.get("answer")
-        output = retriever.invoke(user_input)
-        if "answer" not in output:
-            raise ValueError(
-                "The retriever did not return an answer. Check retriever initialization!"
-            )
-        response = output["answer"]
-        contexts = output["context"]
-        retrieved_contexts = [context["content"] for context in contexts]
-
-        result = {
-            "id": sample_id,
-            "user_input": user_input,
-            "reference": reference,
-            "response": response,
-            "retrieved_contexts": retrieved_contexts,
-        }
-        results.append(result)
-
     if output_dir:
-        file_name = "retrieved_answers.json"
-        file_path = os.path.join(output_dir, file_name)
-        save_json_file(file_path=file_path, data=results)
-
+        os.makedirs(output_dir, exist_ok=True)
+        pd.DataFrame(results).to_csv(
+            os.path.join(output_dir, f"{safe_name(retriever.name)}_retrieval_results.csv"),
+            index=False,
+        )
     return results
+
+
+def safe_name(name: str) -> str:
+    return "".join(c if c.isalnum() or c in "-_." else "_" for c in name)
+
+
+def summarize_run(
+    results: list[dict],
+    k_values: Sequence[int] = (1, 5, 10),
+    index: Optional[CorpusIndex] = None,
+    ci_k: int = 10,
+) -> dict:
+    """Metrics per k, bootstrap intervals at `ci_k`, latency percentiles and the recall ceiling."""
+    evaluator = NonLLMRetrievalEvaluator()
+    metrics = evaluator.calculate_evaluation_metrics(results, list(k_values))
+    latency = np.array([r["latency_ms"] for r in results])
+    summary = {
+        "n_queries": len(results),
+        "metrics": {str(k): v for k, v in metrics.items()},
+        "confidence_intervals": evaluator.calculate_confidence_intervals(results, k=ci_k),
+        "latency_ms": {
+            "p50": float(np.percentile(latency, 50)),
+            "p95": float(np.percentile(latency, 95)),
+            "mean": float(latency.mean()),
+        },
+    }
+    if index is not None:
+        summary["recall_ceiling"] = index.gold_coverage(r["true_pmids"] for r in results)
+    return summary
+
+
+def compare_runs(
+    baseline: list[dict],
+    candidate: list[dict],
+    metrics: Sequence[str] = ("recall", "ndcg", "mrr"),
+    k: int = 10,
+) -> dict:
+    """Paired bootstrap tests of candidate vs baseline on the same queries."""
+    if [r["id"] for r in baseline] != [r["id"] for r in candidate]:
+        raise ValueError("Runs must cover the same queries in the same order")
+    true_lists = [r["true_pmids"] for r in baseline]
+    comparison = {}
+    for metric in metrics:
+        a = per_query_scores(metric, true_lists, [r["retrieved_pmids"] for r in baseline], k)
+        b = per_query_scores(metric, true_lists, [r["retrieved_pmids"] for r in candidate], k)
+        comparison[f"{metric}@{k}"] = paired_bootstrap_test(a, b)
+    return comparison
+
+
+def save_summary(summary: dict, output_dir: str, name: str) -> str:
+    os.makedirs(output_dir, exist_ok=True)
+    path = os.path.join(output_dir, f"{safe_name(name)}_summary.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+    return path

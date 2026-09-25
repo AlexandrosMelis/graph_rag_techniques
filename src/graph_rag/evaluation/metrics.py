@@ -103,13 +103,16 @@ def coverage_at_k(
 
 
 def average_precision_at_k(true: List[str], pred: List[str], k: int) -> float:
+    """AP@k normalized by min(|relevant|, k), so missing relevant documents cost score."""
+    if not true:
+        return 0.0
     hits = 0
     sum_prec = 0.0
     for i, p in enumerate(pred[:k], start=1):
         if p in true:
             hits += 1
             sum_prec += hits / i
-    return sum_prec / hits if hits > 0 else 0.0
+    return sum_prec / min(len(true), k)
 
 
 def map_at_k(true_lists: List[List[str]], pred_lists: List[List[str]], k: int) -> float:
@@ -127,11 +130,13 @@ def bootstrap_confidence_interval(
     k: int,
     num_rounds: int = 1000,
     alpha: float = 0.05,
+    seed: int = 42,
 ) -> Tuple[float, float]:
+    rng = np.random.default_rng(seed)
     n = len(true_lists)
     scores = []
     for _ in range(num_rounds):
-        idxs = np.random.randint(0, n, n)
+        idxs = rng.integers(0, n, n)
         bs_true = [true_lists[i] for i in idxs]
         bs_pred = [pred_lists[i] for i in idxs]
         scores.append(metric_fn(bs_true, bs_pred, k))
@@ -223,7 +228,7 @@ class NonLLMRetrievalEvaluator:
         plt.tight_layout()
         if output_path:
             plt.savefig(output_path, bbox_inches="tight")
-        plt.show()
+        plt.close()
 
     def compare_models(
         self,
@@ -246,7 +251,7 @@ class NonLLMRetrievalEvaluator:
         plt.tight_layout()
         if output_file:
             plt.savefig(output_file, bbox_inches="tight")
-        plt.show()
+        plt.close()
         return df
 
     def calculate_confidence_intervals(
@@ -311,3 +316,42 @@ def run_evaluation(
         )
 
     return metrics, evaluator
+
+
+PER_QUERY_METRICS: Dict[str, Callable[[List[str], List[str], int], float]] = {
+    "precision": lambda t, p, k: precision_at_k([t], [p], k),
+    "recall": lambda t, p, k: recall_at_k([t], [p], k),
+    "mrr": lambda t, p, k: mean_reciprocal_rank([t], [p], k),
+    "ndcg": lambda t, p, k: ndcg_at_k([t], [p], k),
+    "success": lambda t, p, k: success_at_k([t], [p], k),
+    "map": average_precision_at_k,
+}
+
+
+def per_query_scores(
+    metric: str, true_lists: List[List[str]], pred_lists: List[List[str]], k: int
+) -> np.ndarray:
+    fn = PER_QUERY_METRICS[metric]
+    return np.array([fn(t, p, k) for t, p in zip(true_lists, pred_lists)], dtype=np.float64)
+
+
+def paired_bootstrap_test(
+    scores_a: np.ndarray, scores_b: np.ndarray, num_rounds: int = 10000, seed: int = 42
+) -> Dict[str, float]:
+    """
+    Paired bootstrap over queries for mean(b) - mean(a). Returns the observed difference,
+    its 95% interval and a two-sided p-value for "no difference".
+    """
+    diff = np.asarray(scores_b, dtype=np.float64) - np.asarray(scores_a, dtype=np.float64)
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, len(diff), size=(num_rounds, len(diff)))
+    boot = diff[idx].mean(axis=1)
+    observed = float(diff.mean())
+    centered = boot - boot.mean()
+    p_value = float((np.abs(centered) >= abs(observed)).mean())
+    return {
+        "mean_diff": observed,
+        "ci_low": float(np.percentile(boot, 2.5)),
+        "ci_high": float(np.percentile(boot, 97.5)),
+        "p_value": p_value,
+    }
