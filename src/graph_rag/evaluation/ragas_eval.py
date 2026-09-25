@@ -7,6 +7,7 @@ from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import (
     ContextRecall,
     FactualCorrectness,
+    Faithfulness,
     LLMContextPrecisionWithReference,
     ResponseRelevancy,
 )
@@ -22,11 +23,13 @@ class LLMBasedEvaluator:
         context_recall = ContextRecall()
         response_relevancy = ResponseRelevancy()
         factual_correctness = FactualCorrectness()
+        faithfulness = Faithfulness()
         self.eval_metrics = [
             context_precision,
             context_recall,
             response_relevancy,
             factual_correctness,
+            faithfulness,
         ]
 
     def evaluate_answers(self, generated_data: list) -> dict:

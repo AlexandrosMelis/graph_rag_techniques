@@ -7,13 +7,12 @@ requires-python = ">=3.10,<3.13"
 authors = [{ name = "Alexandros Melis" }]
 dependencies = [
     "biopython>=1.84",
-    "faiss-cpu>=1.9",
-    "graphdatascience>=1.14",
+    "bm25s>=0.2",
+    "huggingface-hub>=0.26",
     "langchain>=0.3,<0.4",
     "langchain-core>=0.3,<0.4",
     "langchain-google-genai>=2.0,<3",
     "langchain-groq>=0.2,<0.4",
-    "langchain-huggingface>=0.1,<0.2",
     "langchain-ollama>=0.2,<0.4",
     "langchain-text-splitters>=0.3,<0.4",
     "matplotlib>=3.9",
@@ -31,6 +30,11 @@ dependencies = [
     "torch>=2.6",
     "torch-geometric>=2.6",
     "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+entities = [
+    "gliner>=0.2",
 ]
 
 [dependency-groups]

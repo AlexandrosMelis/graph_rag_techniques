@@ -60,34 +60,26 @@ class ConfigEnv:
     # Load variables from .env file (if present) and system environment
     load_dotenv(find_dotenv(), override=True)
 
-    # Environment variables
-    # Provide defaults or raise an error if a critical env variable is missing.
     ENTREZ_EMAIL = os.getenv("ENTREZ_EMAIL")
+    ENTREZ_API_KEY = os.getenv("ENTREZ_API_KEY")
     NEO4J_URI = os.getenv("NEO4J_URI")
     NEO4J_USER = os.getenv("NEO4J_USER")
     NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
     NEO4J_DB = os.getenv("NEO4J_PUBMED_DATABASE")
 
-    # Immediately validate after loading
-    _REQUIRED_VARS = [
-        "ENTREZ_EMAIL",  # Example: required for Entrez (NCBI) API
-        "NEO4J_URI",
-        "NEO4J_USER",
-        "NEO4J_PASSWORD",
-        "NEO4J_DB",
-    ]
+    NEO4J_VARS = ("NEO4J_URI", "NEO4J_USER", "NEO4J_PASSWORD", "NEO4J_DB")
 
     @classmethod
-    def _validate_required_vars(cls) -> None:
+    def require(cls, *names: str) -> None:
         """
-        Ensures that required environment variables are present.
-        Logs or raises an error if any are missing.
+        Raise if any of the given variables is unset. Checked where a service is used,
+        so the retrieval pipeline runs without Neo4j or NCBI credentials.
         """
-        for var_name in cls._REQUIRED_VARS:
-            if getattr(cls, var_name) is None:
-                message = f"Missing required environment variable: {var_name}"
-                logging.error(message)
-                raise EnvironmentError(message)
+        missing = [name for name in names if not getattr(cls, name)]
+        if missing:
+            message = f"Missing required environment variable(s): {', '.join(missing)}"
+            logging.error(message)
+            raise EnvironmentError(message)
 
 
 class ConfigPath:
@@ -107,6 +99,8 @@ class ConfigPath:
     RESULTS_DIR = os.path.join(DATA_DIR, "results")
     MODELS_DIR = os.path.join(DATA_DIR, "models")
     OUTPUT_DIR = os.path.join(DATA_DIR, "output")
+    SPLITS_DIR = os.path.join(DATA_DIR, "splits")
+    INDEX_DIR = os.path.join(DATA_DIR, "index")
 
     @classmethod
     def create_directories(cls):
@@ -119,6 +113,8 @@ class ConfigPath:
             cls.INTERMEDIATE_DATA_DIR,
             cls.MODELS_DIR,
             cls.OUTPUT_DIR,
+            cls.SPLITS_DIR,
+            cls.INDEX_DIR,
         ]
 
         for directory in dirs_to_create:
@@ -127,5 +123,3 @@ class ConfigPath:
 
 # Create all directories when this file is imported
 ConfigPath.create_directories()
-ConfigEnv._validate_required_vars()
-# logger = Logger.get_logger(log_file="logs")
