@@ -121,4 +121,10 @@ def evaluate_retrieval(params: EvaluateInput) -> dict:
     return {"output_dir": result["output_dir"], "table": result["table"]}
 
 
-ALL_ACTIVITIES = [prepare_data, fetch_mesh_headings, build_index, train_component, evaluate_retrieval]
+ALL_ACTIVITIES = [
+    prepare_data,
+    fetch_mesh_headings,
+    build_index,
+    train_component,
+    evaluate_retrieval,
+]

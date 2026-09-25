@@ -92,9 +92,7 @@ def list_retrievers() -> None:
 
 
 @data_app.command("prepare")
-def data_prepare(
-    dev_fraction: float = 0.1, seed: int = 42, force_download: bool = False
-) -> None:
+def data_prepare(dev_fraction: float = 0.1, seed: int = 42, force_download: bool = False) -> None:
     """Download the dataset at a pinned revision and write train/dev/test splits."""
     from graph_rag.pipelines import prepare_data
 
@@ -154,7 +152,9 @@ def train_reranker(
     from graph_rag.pipelines import training
 
     config = RerankerTrainingConfig(**parse_overrides(param, RerankerTrainingConfig))
-    _echo_json(training.train_reranker(edge_types, config, max_train_queries, output_dir=output_dir))
+    _echo_json(
+        training.train_reranker(edge_types, config, max_train_queries, output_dir=output_dir)
+    )
 
 
 @train_app.command("gnn")

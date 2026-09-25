@@ -179,7 +179,12 @@ def train_gnn(
         (output_dir / "history.json").write_text(json.dumps(history, indent=2))
         summary = {
             key: history[key]
-            for key in ("best_val_auc", "test_auc", "feature_cosine_val_auc", "feature_cosine_test_auc")
+            for key in (
+                "best_val_auc",
+                "test_auc",
+                "feature_cosine_val_auc",
+                "feature_cosine_test_auc",
+            )
         }
         tracker.log_metrics(summary)
         tracker.log_artifacts(output_dir, "history")

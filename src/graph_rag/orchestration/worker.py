@@ -17,7 +17,9 @@ async def connect(settings: Optional[Settings] = None) -> Client:
     return await Client.connect(settings.temporal_address, namespace=settings.temporal_namespace)
 
 
-async def run_worker(max_concurrent_activities: int = 2, settings: Optional[Settings] = None) -> None:
+async def run_worker(
+    max_concurrent_activities: int = 2, settings: Optional[Settings] = None
+) -> None:
     """
     Poll the task queue until interrupted. Activities are GPU/CPU heavy, so only a couple
     run at once per worker; start more workers (on more machines) to scale out.

@@ -92,7 +92,11 @@ def evaluate_retrieval(
     splits = load_splits()
     questions = splits[split][:max_queries] if max_queries else splits[split]
     index, factory = _load_factory(
-        Path(index_dir or settings.index_dir), adapter_dir, graph_adapter_dir, reranker_dir, cross_encoder
+        Path(index_dir or settings.index_dir),
+        adapter_dir,
+        graph_adapter_dir,
+        reranker_dir,
+        cross_encoder,
     )
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = Path(output_dir or settings.results_dir / f"retrieval_{split}_{timestamp}")
@@ -134,7 +138,11 @@ def evaluate_retrieval(
                     **compare_runs(runs[baseline], runs[row["name"]], k=ci_k),
                 }
             save_summary(row["summary"], str(output_dir), row["name"])
-            with tracked_run(row["name"], params={"retriever": row["name"], **row["summary"]["params"]}, nested=True) as child:
+            with tracked_run(
+                row["name"],
+                params={"retriever": row["name"], **row["summary"]["params"]},
+                nested=True,
+            ) as child:
                 child.log_metrics(
                     numeric_metrics(
                         {
@@ -186,8 +194,15 @@ def evaluate_rag(
         DEFAULT_RERANKER_DIR,
         None,
     )
-    params = {"retriever": retriever, "split": split, "n": len(questions), "top_k": top_k,
-              "provider": provider, "model": model, "seed": seed}
+    params = {
+        "retriever": retriever,
+        "split": split,
+        "n": len(questions),
+        "top_k": top_k,
+        "provider": provider,
+        "model": model,
+        "seed": seed,
+    }
     with tracked_run("evaluate_rag", params=params) as tracker:
         if settings.tracking_enabled:
             mlflow.langchain.autolog()
@@ -211,7 +226,9 @@ def evaluate_rag(
         output_dir = settings.results_dir / f"rag_{retriever}_{split}_{timestamp}"
         os.makedirs(output_dir, exist_ok=True)
         (output_dir / "generated.json").write_text(json.dumps(generated, indent=2))
-        result = run_evaluation_on_generated_answers(generated, llm=llm, embedding_model=factory.encoder)
+        result = run_evaluation_on_generated_answers(
+            generated, llm=llm, embedding_model=factory.encoder
+        )
         scores = result.to_pandas().mean(numeric_only=True).to_dict()
         (output_dir / "ragas_scores.json").write_text(json.dumps(scores, indent=2))
         tracker.log_metrics(scores)

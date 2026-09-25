@@ -10,9 +10,7 @@ from graph_rag.graph.connection import Neo4jConnection
 def _assert_safe_identifier(name: str, what: str) -> None:
     """Prevent injection by restricting to alphanumeric + underscore, starting with letter/underscore."""
     if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
-        raise ValueError(
-            f"Invalid {what} `{name}`: must match /^[A-Za-z_][A-Za-z0-9_]*$/."
-        )
+        raise ValueError(f"Invalid {what} `{name}`: must match /^[A-Za-z_][A-Za-z0-9_]*$/.")
 
 
 class GraphCrud:
@@ -232,9 +230,7 @@ class GraphCrud:
 
     # ─── Batch Node Operations ─────────────────────────────────────────────
 
-    def create_nodes_batch(
-        self, label: str, properties_list: List[Dict[str, Any]]
-    ) -> List[int]:
+    def create_nodes_batch(self, label: str, properties_list: List[Dict[str, Any]]) -> List[int]:
         """Batch-create nodes of one label, returning their elementIds."""
         _assert_safe_identifier(label, "label")
         if not properties_list:
@@ -295,9 +291,7 @@ class GraphCrud:
             opts.append(f"`vector.dimensions`: {dimensions}")
         if similarity_function:
             opts.append(f"`vector.similarity_function`: '{similarity_function}'")
-        opts_str = (
-            f" OPTIONS {{ indexConfig: {{ {', '.join(opts)} }} }}" if opts else ""
-        )
+        opts_str = f" OPTIONS {{ indexConfig: {{ {', '.join(opts)} }} }}" if opts else ""
 
         cy = (
             f"CREATE VECTOR INDEX `{index_name}` IF NOT EXISTS "
@@ -307,15 +301,11 @@ class GraphCrud:
         self._execute_write(lambda tx: tx.run(cy))
         print(f"Ensured vector index `{index_name}` on {label}({property_name})")
 
-    def get_nodes_with_property(
-        self, label: str, property_name: str
-    ) -> List[Dict[str, Any]]:
+    def get_nodes_with_property(self, label: str, property_name: str) -> List[Dict[str, Any]]:
         """Return [{id, property_name: value}, ...] for all nodes where prop is not null."""
         _assert_safe_identifier(label, "label")
         cy = (
-            "MATCH (n:`{}`)\n"
-            "WHERE n.`{}` IS NOT NULL\n"
-            "RETURN elementId(n) AS id, n.`{}` AS `{}`"
+            "MATCH (n:`{}`)\nWHERE n.`{}` IS NOT NULL\nRETURN elementId(n) AS id, n.`{}` AS `{}`"
         ).format(label, property_name, property_name, property_name)
         return self._execute_read(cy)
 

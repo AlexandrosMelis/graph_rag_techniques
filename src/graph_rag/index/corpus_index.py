@@ -83,7 +83,9 @@ class CorpusIndex:
         parts = []
         for start in range(0, len(texts), batch_texts):
             parts.append(
-                encoder.encode_documents(texts[start : start + batch_texts], show_progress=show_progress)
+                encoder.encode_documents(
+                    texts[start : start + batch_texts], show_progress=show_progress
+                )
             )
             if progress:
                 progress(min(start + batch_texts, len(texts)), len(texts))

@@ -91,6 +91,9 @@ def push_artifact(
     api = HfApi()
     api.create_repo(repo_id=repo_id, repo_type="model", private=private, exist_ok=True)
     commit = api.upload_folder(
-        folder_path=str(local_dir), repo_id=repo_id, repo_type="model", commit_message=commit_message
+        folder_path=str(local_dir),
+        repo_id=repo_id,
+        repo_type="model",
+        commit_message=commit_message,
     )
     return str(commit.commit_url if hasattr(commit, "commit_url") else commit)

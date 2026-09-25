@@ -113,7 +113,9 @@ def run(
             chunks,
             encoder,
             show_progress=progress is None,
-            progress=(lambda done, total: progress(f"embedded {done}/{total}")) if progress else None,
+            progress=(lambda done, total: progress(f"embedded {done}/{total}"))
+            if progress
+            else None,
         )
         index.metadata.update(
             query_prompt_name=config.query_prompt_name,

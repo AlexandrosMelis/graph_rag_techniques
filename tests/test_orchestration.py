@@ -73,21 +73,29 @@ async def run_workflow(env, workflow_run, params, calls):
 async def test_index_workflow_fetches_mesh_only_when_needed(env):
     calls: list[str] = []
     result = await run_workflow(
-        env, IndexCorpusWorkflow.run, IndexCorpusInput(index=IndexInput({"entities": "mesh"})), calls
+        env,
+        IndexCorpusWorkflow.run,
+        IndexCorpusInput(index=IndexInput({"entities": "mesh"})),
+        calls,
     )
     assert calls == ["prepare_data", "fetch_mesh_headings", "build_index"]
     assert result["index"]["entities"] == "mesh"
 
     calls.clear()
     await run_workflow(
-        env, IndexCorpusWorkflow.run, IndexCorpusInput(index=IndexInput({"entities": "none"})), calls
+        env,
+        IndexCorpusWorkflow.run,
+        IndexCorpusInput(index=IndexInput({"entities": "none"})),
+        calls,
     )
     assert calls == ["prepare_data", "build_index"]
 
 
 async def test_experiment_trains_gnn_first_and_evaluates_last(env):
     calls: list[str] = []
-    params = ExperimentInput(train=["reranker", "gnn", "adapter"], evaluate=EvaluateInput(split="test"))
+    params = ExperimentInput(
+        train=["reranker", "gnn", "adapter"], evaluate=EvaluateInput(split="test")
+    )
     result = await run_workflow(env, ExperimentWorkflow.run, params, calls)
     assert calls[0] == "train:gnn"
     assert set(calls[1:3]) == {"train:adapter", "train:reranker"}

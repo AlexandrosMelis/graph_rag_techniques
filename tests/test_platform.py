@@ -45,8 +45,13 @@ def test_tracking_disabled_uses_null_tracker(tmp_path):
 
 
 def test_tracked_run_logs_params_and_metrics(tmp_path):
-    s = Settings(_env_file=None, data_dir=tmp_path, tracking_enabled=True, mlflow_tracking_uri=None,
-                 mlflow_experiment="tests")
+    s = Settings(
+        _env_file=None,
+        data_dir=tmp_path,
+        tracking_enabled=True,
+        mlflow_tracking_uri=None,
+        mlflow_experiment="tests",
+    )
     with tracked_run("train", params={"config": {"lr": 0.1}}, settings=s) as tracker:
         tracker.log_metrics({"dev_recall": 0.3}, step=1)
         run_id = tracker.run_id
@@ -96,8 +101,12 @@ def test_hub_references(tmp_path, monkeypatch):
 
 
 def test_model_card_from_adapter_directory(tmp_path):
-    QueryAdapter(dim=8, rank=2).save(tmp_path, extra={"embedding_model": "neuml/pubmedbert-base-embeddings"})
-    (tmp_path / "history.json").write_text(json.dumps({"best_dev_recall": 0.42, "config": {"eval_k": 10}}))
+    QueryAdapter(dim=8, rank=2).save(
+        tmp_path, extra={"embedding_model": "neuml/pubmedbert-base-embeddings"}
+    )
+    (tmp_path / "history.json").write_text(
+        json.dumps({"best_dev_recall": 0.42, "config": {"eval_k": 10}})
+    )
     card = model_card(tmp_path)
     assert "base_model: neuml/pubmedbert-base-embeddings" in card
     assert "recall@10: 0.4200" in card

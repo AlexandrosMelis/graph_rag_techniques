@@ -51,9 +51,7 @@ class ChatModel:
             if self.model_name not in self.groq_models:
                 print(f"Model {self.model_name} not supported")
                 raise ValueError(f"Model {self.model_name} not supported")
-            llm = init_chat_model(
-                self.model_name, model_provider=self.provider, temperature=0
-            )
+            llm = init_chat_model(self.model_name, model_provider=self.provider, temperature=0)
         elif self.provider == "google":
             if not os.environ.get("GOOGLE_API_KEY"):
                 print("GOOGLE_API_KEY is not set")

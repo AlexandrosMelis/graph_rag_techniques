@@ -108,7 +108,9 @@ def configure_mlflow(settings: Settings):
         settings.mlflow_dir.mkdir(parents=True, exist_ok=True)
         if mlflow.get_experiment_by_name(settings.mlflow_experiment) is None:
             artifacts = settings.mlflow_dir / "artifacts"
-            mlflow.create_experiment(settings.mlflow_experiment, artifact_location=artifacts.as_uri())
+            mlflow.create_experiment(
+                settings.mlflow_experiment, artifact_location=artifacts.as_uri()
+            )
     mlflow.set_experiment(settings.mlflow_experiment)
     return mlflow
 
