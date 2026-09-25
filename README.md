@@ -6,6 +6,18 @@ Graph-augmented retrieval for biomedical RAG. The question this code is built to
 
 A graph only helps when its edges carry information the text embedding does not (shared entities, document structure) and when the question needs it (bridging between passages). Everything here is set up to measure that without fooling ourselves: a fixed corpus, question-level splits, no relevance labels anywhere in the index, strong baselines and paired significance tests.
 
+## Status and plan
+
+The repository was rewritten in September 2026. The original implementation could not produce a valid result: the relevance labels were stored in the graph and fed to the models, the projection models were trained on the questions they were evaluated on, the similarity graph was a threshold on the very embeddings the GNN consumed, and the GAT evaluation script returned empty rankings for every query. That code is gone; the ideas that survived (graph at query time, PPR, a learned query mapping) are reimplemented on a leakage-free setup.
+
+What exists now, in three merged pieces:
+
+1. **Structure** (`refactor/repo-structure`): a `src/graph_rag` package, uv lockfile, notebooks turned into modules, import smoke tests.
+2. **Method** (`fix/critical-major-issues`): fixed corpus and question-level splits, chunk/entity graph without labels, BM25 / dense / hybrid / cross-encoder baselines, in-process PPR and expansion, an identity-initialised query adapter, a query-conditioned graph re-ranker, an honest GNN pretext task, corrected metrics with paired tests and latency.
+3. **Tooling** (`feat/modern-tooling`): `graph-rag` CLI, MLflow tracking and tracing, Temporal workflows for the long runs, Hugging Face Hub sharing, docker compose, pre-commit and CI.
+
+**No experiment has been run with the new code yet.** The full plan, phase by phase with checkboxes, is in [docs/ROADMAP.md](docs/ROADMAP.md). The first phase is the baselines and the RQ0 result on BioASQ; it needs roughly a day of compute on a laptop.
+
 ## Research questions
 
 | | Question |
@@ -121,6 +133,7 @@ graph_rag_techniques/
 ├── docker-compose.yml            # Temporal, MLflow, optional Neo4j
 ├── .pre-commit-config.yaml       # ruff, uv lock check, hygiene hooks
 ├── .github/workflows/ci.yml      # lint + tests on every PR
+├── docs/ROADMAP.md               # status and the phase-by-phase plan
 ├── src/graph_rag/
 │   ├── cli.py                    # `graph-rag` command line
 │   ├── config.py                 # typed settings (pydantic-settings, .env)
