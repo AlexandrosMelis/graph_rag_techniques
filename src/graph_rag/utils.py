@@ -1,0 +1,44 @@
+import json
+import random
+
+import numpy as np
+import tiktoken
+
+
+def num_tokens_from_string(string: str, encoding_name: str = "cl100k_base") -> int:
+    """Returns the number of tokens in a text string."""
+    encoding = tiktoken.get_encoding(encoding_name)
+    num_tokens = len(encoding.encode(string))
+    return num_tokens
+
+
+def read_json_file(file_path: str) -> dict:
+    try:
+        with open(file_path, "r", encoding="utf-8") as file:
+            data = json.load(file)
+            return data
+    except FileNotFoundError as e:
+        print(f"File not found: {file_path}")
+        raise e
+    except json.JSONDecodeError as e:
+        print(f"Error decoding JSON from file: {file_path}")
+        raise e
+
+
+def save_json_file(file_path: str, data: dict) -> None:
+    try:
+        with open(file_path, "w", encoding="utf-8") as file:
+            json.dump(data, file)
+    except Exception as e:
+        print(f"Failed to write JSON to {file_path}. Error: {e}")
+        raise
+
+
+def set_seed(seed: int = 42) -> None:
+    """Set random seeds for reproducibility."""
+    import torch
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)

@@ -1,317 +1,116 @@
 # Graph RAG Techniques
+
 **AUTH Diploma Thesis Project**
 
-A comprehensive research project implementing and evaluating various retrieval techniques for biomedical question answering to enhance Graph Retrieval-Augmented Generation (RAG). This repository explores multiple approaches to enhance document retrieval using knowledge graphs, neural network models, and advanced graph algorithms.
+Research code for graph-augmented retrieval in biomedical question answering. The project builds a knowledge graph from BioASQ questions, PubMed abstracts and MeSH terms in Neo4j, learns graph embeddings with GNNs, and compares graph-based retrievers against dense-embedding search.
 
-## Project Scope
-
-This repository implements and compares multiple graph-based retrieval techniques for biomedical question answering:
-
-### **Core Techniques Implemented:**
-1. **Traditional Graph RAG**: Basic semantic search with knowledge graph structure
-2. **Neural Graph Projection Models**: 
-   - Dual Projection Models with contrastive learning
-   - Graph Attention Network (GAT) based projection
-   - Models with attentive pooling and domain classification
-3. **Graph Neural Networks (GNNs)**:
-   - Graph autoencoders for node embeddings
-   - Heterogeneous GNN models
-   - GAT-based query projection
-4. **Advanced Retrieval Methods**:
-   - Graph embedding similarity search
-   - Multi-hop neighborhood expansion
-   - MeSH subgraph-based retrieval
-   - Personalized PageRank retrieval
-   
-### **Key Features:**
-- **Knowledge Graph**: Integrates BioASQ questions, PubMed articles, and MeSH terms
-- **Comprehensive Evaluation**: Non-LLM and LLM-based evaluation metrics
-- **Neo4j Integration**: Full graph database support with advanced querying
-- **Extensible Design**: Modular architecture for easy addition of new techniques
-
-## Folder Structure
+## Repository layout
 
 ```
 graph_rag_techniques/
-├── data/                           # Data storage directory (created dynamically)
-│   ├── raw/                       # Raw datasets and fetched data
-│   ├── intermediate/              # Processed intermediate data
-│   ├── external/                  # External data sources
-│   ├── results/                   # Evaluation results and metrics
-│   ├── models/                    # Trained model checkpoints
-│   └── output/                    # Generated outputs and visualizations
-│
-├── images/                        # Architecture diagrams and visualizations
-│   ├── gat_model_architecture.png
-│   ├── gnn_architecture_v2.png
-│   ├── graph_construction_workflow.png
-│   ├── implementation_overview_workflow.png
-│   └── neo4j_schema_visualization.png
-│
-├── src/                          # Source code
-│   ├── configs/                  # Configuration management
-│   │   ├── config.py            # Environment and path configurations
-│   │   └── __init__.py
-│   │
-│   ├── data_collection/         # Data fetching and processing
-│   │   ├── dataset_constructor.py  # Graph dataset construction
-│   │   ├── fetcher.py              # PubMed and MeSH data fetchers
-│   │   ├── reader.py               # BioASQ data reader
-│   │   └── text_splitter.py        # Text chunking utilities
-│   │
-│   ├── knowledge_graph/         # Neo4j database management
-│   │   ├── connection.py        # Neo4j connection handler
-│   │   ├── crud.py              # Database CRUD operations
-│   │   ├── loader.py            # Graph data loading utilities
-│   │   └── __init__.py
-│   │
-│   ├── llms/                    # Language model interfaces
-│   │   ├── embedding_model.py   # Text embedding models
-│   │   └── llm.py              # Chat model interfaces
-│   │
-│   ├── projection_models/       # Neural projection models
-│   │   ├── dual_projection_model.py           # Basic dual projection
-│   │   ├── dual_projection_neo4j_data.py      # Neo4j data processing
-│   │   ├── projection_gat_model.py            # GAT-based projection
-│   │   ├── proj_model_with_attentive_pooling.py
-│   │   ├── proj_model_with_domain_classifier.py
-│   │   ├── proj_model_with_triplets_.py
-│   │   └── graph_aware/                       # Advanced graph-aware models
-│   │       ├── gat_projection_model.py
-│   │       ├── query_gat_loader.py
-│   │       └── train_gat_projection_model.py
-│   │
-│   ├── graph_embeddings/        # GNN models and training
-│   │   ├── compute_gnn_embeddings.py    # Embedding computation
-│   │   ├── gnn_data_extraction.py       # Graph data extraction
-│   │   ├── gnn_data_preparation.py      # PyTorch Geometric data prep
-│   │   ├── gnn_train.py                 # GNN training pipeline
-│   │   ├── graph_encoder_model.py       # Graph encoder architectures
-│   │   ├── hetero_gnn_*                 # Heterogeneous GNN variants
-│   │   ├── projection_data_processor.py
-│   │   └── utils.py
-│   │
-│   ├── retrieval_techniques/    # Retrieval implementations
-│   │   ├── base_retriever.py              # Base retriever interface
-│   │   ├── dual_projection_retriever.py   # Neural projection retrieval
-│   │   ├── gnn_retriever.py               # GNN-based retrieval
-│   │   ├── non_ml_retrievers.py           # Traditional graph algorithms
-│   │   └── personalized_pagerank_retriever.py
-│   │
-│   ├── evaluation/              # Evaluation frameworks
-│   │   ├── executor.py          # Evaluation execution pipeline
-│   │   ├── llm_based_eval.py    # LLM-based evaluation metrics
-│   │   └── non_llm_based_eval.py # Traditional IR metrics
-│   │
-│   ├── utils/                   # Utility functions
-│   │   └── utils.py            # General utilities
-│   │
-│   └── *.py                     # Main execution scripts
-│       ├── main.py                     # Primary pipeline runner
-│       ├── dual_projection_main.py     # Dual projection training
-│       ├── gat_projection_main.py      # GAT model training
-│       ├── hetero_graph_encoder_main.py
-│       ├── graph_autoencoder_training_main.py
-│       ├── run_dual_projection_evaluation.py
-│       ├── run_gat_evaluation.py
-│       ├── evaluate_non_ml_retrievers.py
-│       └── *.ipynb                     # Jupyter notebooks for experiments
-│
-├── requirements.txt             # Python dependencies
-└── README.md                   # This documentation
+├── pyproject.toml          # package metadata, dependencies, tool config (uv / hatchling)
+├── uv.lock                 # locked dependency versions
+├── .env.example            # environment variables to copy into .env
+├── docs/
+│   └── images/             # architecture diagrams
+├── src/graph_rag/
+│   ├── config.py           # environment + data directory configuration
+│   ├── utils.py            # JSON IO, token counting, seeding
+│   ├── data/               # BioASQ reader, PubMed/MeSH fetchers, dataset builder, chunking
+│   ├── graph/              # Neo4j connection, CRUD helpers, graph loader
+│   ├── llm/                # embedding model and chat model wrappers
+│   ├── gnn/                # homogeneous and heterogeneous GNN encoders, training, inference
+│   ├── projection/         # query projection models (dual, GAT, triplet, attentive, adversarial)
+│   ├── retrieval/          # retriever interface and all retrieval techniques
+│   ├── evaluation/         # IR metrics, retrieval runner, RAGAS evaluation
+│   ├── visualization/      # embedding visualizations
+│   ├── experiments/        # exploratory scripts (dataset/MeSH exploration, GAE baseline)
+│   └── pipelines/          # runnable entry points (graph building, training, evaluation)
+└── tests/                  # import smoke tests and metric unit tests
 ```
 
-## Prerequisites
+Every runnable file lives under `graph_rag.pipelines` or `graph_rag.experiments` and is executed as a module, e.g. `uv run python -m graph_rag.pipelines.build_graph construct`.
 
-### **1. Dataset Requirements**
+## Setup
 
-#### **Primary Dataset:**
-- **BioASQ Dataset**: `rag-mini-bioasq` from Hugging Face
-  - Source: https://huggingface.co/datasets/enelpol/rag-mini-bioasq
-  - Format: Parquet file containing biomedical Q&A pairs
-  - Location: Place in `data/raw/bioasq_test.parquet`
+Requirements: Python 3.10 to 3.12, [uv](https://docs.astral.sh/uv/), and a Neo4j 5 instance with the Graph Data Science plugin (APOC recommended). A CUDA GPU is optional.
 
-#### **External Data Sources:**
-- **PubMed Articles**: Automatically fetched via NCBI Entrez API
-- **MeSH Term Definitions**: Retrieved from NCBI MeSH database
-- **Requirements**: Valid email for NCBI API access
-
-### **2. Database Requirements**
-
-#### **Neo4j Graph Database:**
-- **Version**: Neo4j Desktop 1.6.1 or newer
-- **Requirements**: 
-  - Minimum 4GB RAM allocated to Neo4j
-  - Graph Data Science (GDS) plugin installed
-  - APOC plugin recommended
-- **Database Setup**:
-  ```bash
-  # Create a new database in Neo4j Desktop
-  # Enable GDS and APOC plugins
-  # Configure memory settings (minimum 4GB heap)
-  ```
-
-#### **Neo4j Graph Schema:**
-The system creates the following node types and relationships:
-- **Nodes**: `QUESTION`, `CONTEXT`, `ARTICLE`, `MESH_TERM`
-- **Relationships**: `HAS_CONTEXT`, `MENTIONS_MESH`, `SIMILAR_TO`
-
-![Neo4j Schema](images/neo4j_schema_visualization.png)
-
-### **3. Environment Configuration**
-
-Create a `.env` file in the project root with the following variables:
-
-```env
-# NCBI Entrez API
-ENTREZ_EMAIL=your_email@example.com
-
-# Neo4j Database Connection
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=your_password
-NEO4J_PUBMED_DATABASE=bioasq
-```
-
-### **4. Python Environment**
-
-#### **System Requirements:**
-- **Python**: 3.10+
-- **CUDA**: Optional but recommended for GPU acceleration
-- **Memory**: Minimum 16GB RAM
-
-#### **Installation:**
 ```bash
-# Clone the repository
-git clone <repository_url>
+git clone https://github.com/AlexandrosMelis/graph_rag_techniques.git
 cd graph_rag_techniques
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
+uv sync                      # creates .venv from uv.lock, including dev tools
+cp .env.example .env         # then fill in the values
+uv run pytest                # import smoke tests + metric tests
 ```
 
-## Prerequisites to Run Models
+### Environment
 
-### **1. Data Preparation Pipeline**
+| Variable | Purpose |
+|---|---|
+| `ENTREZ_EMAIL` | NCBI Entrez identification for PubMed / MeSH requests |
+| `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` | Neo4j connection |
+| `NEO4J_PUBMED_DATABASE` | Neo4j database name holding the graph |
+| `GOOGLE_API_KEY`, `GROQ_API_KEY` | only for LLM-based evaluation |
 
-#### **Step 1: Dataset Construction**
-```python
-# Run the main pipeline to construct graph dataset
-python src/main.py
-# This will:
-# 1. Read BioASQ data
-# 2. Fetch PubMed articles
-# 3. Retrieve MeSH definitions
-# 4. Create graph-ready dataset
-```
+### Data
 
-#### **Step 2: Load Data into Neo4j**
-```python
-# Load constructed data into Neo4j
-# Uncomment the load_graph_data section in main.py
-python src/main.py
-```
+The BioASQ questions come from [`enelpol/rag-mini-bioasq`](https://huggingface.co/datasets/enelpol/rag-mini-bioasq). Place the question parquet files in `data/raw/` as `bioasq_train.parquet` and `bioasq_test.parquet`. PubMed abstracts and MeSH definitions are fetched through NCBI Entrez. Everything under `data/` is generated locally and git-ignored.
 
-### **2. Model Training Prerequisites**
+## Running
 
-#### **For Query Projection Models:**
+### Build the graph
+
 ```bash
-# Ensure Neo4j is running and populated with data
-# Train dual projection model
-python src/dual_projection_main.py
-
-# Train GAT projection model
-python src/gat_projection_main.py
+uv run python -m graph_rag.pipelines.build_graph construct          # fetch PubMed + MeSH data
+uv run python -m graph_rag.pipelines.build_graph load               # write nodes, edges, embeddings to Neo4j
+uv run python -m graph_rag.pipelines.build_graph evaluate-baseline  # BERT similarity baseline
 ```
 
-#### **For GNN Models:**
+Graph schema: `QA_PAIR`, `CONTEXT` and `MESH` nodes connected by `HAS_CONTEXT`, `HAS_MESH_TERM` and `IS_SIMILAR_TO`.
+
+![Neo4j schema](docs/images/neo4j_schema_visualization.png)
+
+### Train models
+
 ```bash
-# Train graph autoencoder for node embeddings
-python src/graph_autoencoder_training_main.py
-
-# Train heterogeneous GNN
-python src/hetero_graph_encoder_main.py
+uv run python -m graph_rag.pipelines.train_gnn both                 # GNN encoder, then write graph embeddings
+uv run python -m graph_rag.pipelines.train_hetero_gnn               # heterogeneous GNN
+uv run python -m graph_rag.pipelines.train_dual_projection_neo4j    # dual projection (semantic + graph heads)
+uv run python -m graph_rag.pipelines.train_gat_projection           # GAT query projection
+uv run python -m graph_rag.pipelines.train_triplet_projection       # triplet-loss projection
+uv run python -m graph_rag.pipelines.train_attentive_projection     # attentive-positive projection
+uv run python -m graph_rag.pipelines.train_domain_adversarial_projection
 ```
 
-### **3. Evaluation Prerequisites**
+### Evaluate
 
-#### **Non-ML Retrievers:**
 ```bash
-# Evaluate traditional graph algorithms
-python src/evaluate_non_ml_retrievers.py
+uv run python -m graph_rag.pipelines.evaluate_non_ml                # baseline, N-hop, MeSH subgraph, PPR
+uv run python -m graph_rag.pipelines.evaluate_dual_projection
+uv run python -m graph_rag.pipelines.evaluate_gat
 ```
 
-#### **Neural Model Evaluation:**
+Retrieval metrics: Precision, Recall, F1, MRR, nDCG, MAP, Success and Coverage at k. Results are written to `data/results/`.
+
+### Experiments
+
 ```bash
-# Evaluate dual projection models
-python src/run_dual_projection_evaluation.py
-
-# Evaluate GAT models
-python src/run_gat_evaluation.py
+uv run python -m graph_rag.experiments.exploration preview --split train --n 3
+uv run python -m graph_rag.experiments.exploration mesh --question "What is the role of IL-6 in inflammation?"
+uv run python -m graph_rag.experiments.gae_link_prediction train
+uv run python -m graph_rag.experiments.qwen3_embedding_demo
 ```
 
-### **4. Hardware Recommendations**
-#### **Recommended for Optimal Performance:**
-- **CPU**: 8+ cores (Intel i7/AMD Ryzen 7+)
-- **RAM**: 32GB+
-- **GPU**: NVIDIA RTX 3070+ or equivalent with 8GB+ VRAM
+## Architecture
 
-### **5. Model-Specific Requirements**
+### Graph construction
 
-#### **GAT Models:**
-- Requires subgraph construction (memory intensive)
-- Recommended: GPU with 8GB+ VRAM
-- Training time: 2-6 hours depending on dataset size
+![Graph construction](docs/images/graph_construction_workflow.png)
 
-#### **GNN Autoencoders:**
-- Requires full graph in memory
-- Memory usage scales with graph size
-- Training time: 1-3 hours
+### Implementation overview
 
-#### **Dual Projection Models:**
-- Lightweight compared to graph models
-- Can run efficiently on CPU
-- Training time: 30 minutes - 2 hours
+![Implementation overview](docs/images/implementation_overview_workflow.png)
 
-## Usage Examples
+### GNN encoder
 
-### **Basic Pipeline Execution:**
-```python
-# Complete pipeline from data to evaluation
-python src/main.py  # Data preparation and loading - graph construction and loading
-python src/graph_embeddings/gnn_train.py # Train the graph embedding constructor
-python src/gat_projection_model.py  # Train graph attention projection model
-python src/dual_projection_main.py  # Train dual projection model
-python src/run_dual_projection_evaluation.py  # Evaluate model
-```
-
-## Evaluation Metrics
-
-The system provides comprehensive evaluation using:
-
-### **Information Retrieval Metrics:**
-- **Precision@k, Recall@k, F1@k**
-- **Mean Reciprocal Rank (MRR)**
-- **Normalized Discounted Cumulative Gain (nDCG@k)**
-- **Mean Average Precision (MAP@k)**
-- **Success@k, Coverage@k**
-
-### **Graph-Specific Metrics:**
-- **Node embedding quality**
-- **Graph structure preservation**
-- **Subgraph retrieval accuracy**
-
-## 🔍 Key Components
-
-### **Graph Construction Workflow:**
-![Graph Construction](images/graph_construction_workflow.png)
-
-### **Implementation Overview:**
-![Implementation Overview](images/implementation_overview_workflow.png)
-
-### **GNN Architecture:**
-![GNN Architecture](images/gnn_architecture_v2.png)
+![GNN architecture](docs/images/gnn_architecture_v2.png)
