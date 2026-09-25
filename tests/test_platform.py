@@ -67,7 +67,11 @@ def test_rag_answer_is_traced_with_retrieved_documents(index, encoder, tmp_path)
             return "aspirin reduces inflammation"
 
     mlflow.set_tracking_uri(f"sqlite:///{tmp_path}/traces.db")
-    experiment = mlflow.set_experiment("rag-tracing")
+    # Artifacts go under tmp_path too; the default would write ./mlruns into the repo.
+    experiment_id = mlflow.create_experiment(
+        "rag-tracing", artifact_location=(tmp_path / "artifacts").as_uri()
+    )
+    experiment = mlflow.set_experiment(experiment_id=experiment_id)
     answer = RAGAnswerer(DenseRetriever(index, encoder), FakeLLM(), index, top_k=2).answer(
         "does aspirin reduce inflammation"
     )
