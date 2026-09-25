@@ -1,7 +1,7 @@
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Optional, Protocol
+from typing import Callable, Iterable, Optional, Protocol
 
 import numpy as np
 import pandas as pd
@@ -71,9 +71,25 @@ class CorpusIndex:
 
     @classmethod
     def build(
-        cls, chunks: pd.DataFrame, encoder: TextEncoder, show_progress: bool = True
+        cls,
+        chunks: pd.DataFrame,
+        encoder: TextEncoder,
+        show_progress: bool = True,
+        progress: Optional[Callable[[int, int], None]] = None,
+        batch_texts: int = 4096,
     ) -> "CorpusIndex":
-        embeddings = encoder.encode_documents(chunks["text"].tolist(), show_progress=show_progress)
+        """Embed all chunks; `progress(done, total)` is called after every `batch_texts` chunks."""
+        texts = chunks["text"].tolist()
+        parts = []
+        for start in range(0, len(texts), batch_texts):
+            parts.append(
+                encoder.encode_documents(
+                    texts[start : start + batch_texts], show_progress=show_progress
+                )
+            )
+            if progress:
+                progress(min(start + batch_texts, len(texts)), len(texts))
+        embeddings = np.concatenate(parts) if parts else np.zeros((0, 0), dtype=np.float32)
         return cls(chunks=chunks, embeddings=embeddings, embedding_model=encoder.model_name)
 
     def matrix(self, space: str = "semantic") -> np.ndarray:

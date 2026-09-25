@@ -1,125 +1,106 @@
-import logging
-import os
+"""Typed settings read from environment variables and `.env` (pydantic-settings)."""
+
+from functools import lru_cache
 from pathlib import Path
 
-from dotenv import find_dotenv, load_dotenv
+from pydantic import AliasChoices, Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+PROJECT_DIR = Path(__file__).resolve().parents[2]
 
 
-class Logger:
-    @staticmethod
-    def get_logger(
-        name: str = "GraphRagLogger", log_file: str = None, level: int = logging.DEBUG
-    ) -> logging.Logger:
-        """
-        Creates and returns a logger with the specified name and level.
-        If log_file is provided, logs will also be written to the specified file.
-
-        :param name: Name of the logger.
-        :param log_file: Path to the log file.
-        :param level: Logging level.
-        :return: Configured logger.
-        """
-        logger = logging.getLogger(name)
-        logger.setLevel(level)
-
-        # Create console handler
-        ch = logging.StreamHandler()
-        ch.setLevel(level)
-
-        # Create formatter and add it to the handlers
-        formatter = logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(module)s - %(message)s"
-        )
-        ch.setFormatter(formatter)
-
-        # Add the handlers to the logger
-        if not logger.handlers:
-            logger.addHandler(ch)
-
-            # If log_file is specified, add file handler
-            if log_file:
-                # Ensure the log directory exists
-                log_path = Path(log_file).parent.parent
-                log_path.mkdir(parents=True, exist_ok=True)
-
-                fh = logging.FileHandler(log_file, encoding="utf-8")
-                fh.setLevel(level)
-                fh.setFormatter(formatter)
-                logger.addHandler(fh)
-
-        return logger
+class MissingSettingError(EnvironmentError):
+    """A setting required by the service being used is not configured."""
 
 
-class ConfigEnv:
-    """
-    Central configuration class for environment variables.
-    The variables are loaded at import time using `python-dotenv`
-    (plus any already-existing OS environment variables).
-    """
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=(PROJECT_DIR / ".env", ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
+    )
 
-    # Load variables from .env file (if present) and system environment
-    load_dotenv(find_dotenv(), override=True)
+    data_dir: Path = Field(PROJECT_DIR / "data", validation_alias="GRAPH_RAG_DATA_DIR")
 
-    ENTREZ_EMAIL = os.getenv("ENTREZ_EMAIL")
-    ENTREZ_API_KEY = os.getenv("ENTREZ_API_KEY")
-    NEO4J_URI = os.getenv("NEO4J_URI")
-    NEO4J_USER = os.getenv("NEO4J_USER")
-    NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
-    NEO4J_DB = os.getenv("NEO4J_PUBMED_DATABASE")
+    entrez_email: str | None = Field(None, validation_alias="ENTREZ_EMAIL")
+    entrez_api_key: SecretStr | None = Field(None, validation_alias="ENTREZ_API_KEY")
 
-    NEO4J_VARS = ("NEO4J_URI", "NEO4J_USER", "NEO4J_PASSWORD", "NEO4J_DB")
+    neo4j_uri: str | None = Field(None, validation_alias="NEO4J_URI")
+    neo4j_user: str | None = Field(None, validation_alias="NEO4J_USER")
+    neo4j_password: SecretStr | None = Field(None, validation_alias="NEO4J_PASSWORD")
+    neo4j_database: str | None = Field(
+        None, validation_alias=AliasChoices("NEO4J_DATABASE", "NEO4J_PUBMED_DATABASE")
+    )
 
-    @classmethod
-    def require(cls, *names: str) -> None:
-        """
-        Raise if any of the given variables is unset. Checked where a service is used,
-        so the retrieval pipeline runs without Neo4j or NCBI credentials.
-        """
-        missing = [name for name in names if not getattr(cls, name)]
+    tracking_enabled: bool = Field(True, validation_alias="GRAPH_RAG_TRACKING")
+    mlflow_tracking_uri: str | None = Field(None, validation_alias="MLFLOW_TRACKING_URI")
+    mlflow_experiment: str = Field("graph-rag", validation_alias="GRAPH_RAG_MLFLOW_EXPERIMENT")
+
+    temporal_address: str = Field("localhost:7233", validation_alias="TEMPORAL_ADDRESS")
+    temporal_namespace: str = Field("default", validation_alias="TEMPORAL_NAMESPACE")
+    temporal_task_queue: str = Field("graph-rag", validation_alias="TEMPORAL_TASK_QUEUE")
+
+    @property
+    def raw_dir(self) -> Path:
+        return self.data_dir / "raw"
+
+    @property
+    def splits_dir(self) -> Path:
+        return self.data_dir / "splits"
+
+    @property
+    def index_dir(self) -> Path:
+        return self.data_dir / "index"
+
+    @property
+    def external_dir(self) -> Path:
+        return self.data_dir / "external"
+
+    @property
+    def models_dir(self) -> Path:
+        return self.data_dir / "models"
+
+    @property
+    def results_dir(self) -> Path:
+        return self.data_dir / "results"
+
+    @property
+    def output_dir(self) -> Path:
+        return self.data_dir / "output"
+
+    @property
+    def mlflow_dir(self) -> Path:
+        return self.data_dir / "mlflow"
+
+    @property
+    def tracking_uri(self) -> str:
+        """MLFLOW_TRACKING_URI, or a local SQLite store under the data directory."""
+        return self.mlflow_tracking_uri or f"sqlite:///{self.mlflow_dir / 'mlflow.db'}"
+
+    def require(self, *fields: str) -> None:
+        """Raise if a setting is unset. Checked where a service is used, not at import."""
+        missing = [name for name in fields if not getattr(self, name)]
         if missing:
-            message = f"Missing required environment variable(s): {', '.join(missing)}"
-            logging.error(message)
-            raise EnvironmentError(message)
+            env_names = []
+            for name in missing:
+                alias = type(self).model_fields[name].validation_alias
+                env_names.append(alias.choices[0] if isinstance(alias, AliasChoices) else alias)
+            raise MissingSettingError(f"Missing required setting(s): {', '.join(env_names)}")
+
+    def neo4j_connection_kwargs(self) -> dict:
+        self.require("neo4j_uri", "neo4j_user", "neo4j_password", "neo4j_database")
+        return {
+            "uri": self.neo4j_uri,
+            "user": self.neo4j_user,
+            "password": self.neo4j_password.get_secret_value(),
+            "database": self.neo4j_database,
+        }
 
 
-class ConfigPath:
-    """
-    Central configuration class for all project directory paths.
-    Responsible for creating each directory if it does not already exist.
-    """
-
-    PROJECT_DIR = Path(__file__).resolve().parents[2]
-    BASE_DIR = Path(__file__).resolve().parent  # package dir
-
-    # Data directories
-    DATA_DIR = os.path.join(PROJECT_DIR, "data")
-    RAW_DATA_DIR = os.path.join(DATA_DIR, "raw")
-    INTERMEDIATE_DATA_DIR = os.path.join(DATA_DIR, "intermediate")
-    EXTERNAL_DATA_DIR = os.path.join(DATA_DIR, "external")
-    RESULTS_DIR = os.path.join(DATA_DIR, "results")
-    MODELS_DIR = os.path.join(DATA_DIR, "models")
-    OUTPUT_DIR = os.path.join(DATA_DIR, "output")
-    SPLITS_DIR = os.path.join(DATA_DIR, "splits")
-    INDEX_DIR = os.path.join(DATA_DIR, "index")
-
-    @classmethod
-    def create_directories(cls):
-        """Create each directory if it doesn't already exist."""
-        dirs_to_create = [
-            cls.DATA_DIR,
-            cls.RAW_DATA_DIR,
-            cls.EXTERNAL_DATA_DIR,
-            cls.RESULTS_DIR,
-            cls.INTERMEDIATE_DATA_DIR,
-            cls.MODELS_DIR,
-            cls.OUTPUT_DIR,
-            cls.SPLITS_DIR,
-            cls.INDEX_DIR,
-        ]
-
-        for directory in dirs_to_create:
-            Path(directory).mkdir(parents=True, exist_ok=True)
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
 
 
-# Create all directories when this file is imported
-ConfigPath.create_directories()
+settings = get_settings()

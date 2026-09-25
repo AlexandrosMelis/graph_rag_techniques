@@ -52,8 +52,6 @@ def run_evaluation_on_generated_answers(
     if output_dir:
         # save metrics json
         metrics_file_name = "llm_based_metrics.json"
-        save_json_file(
-            file_path=os.path.join(output_dir, metrics_file_name), data=metrics
-        )
+        save_json_file(file_path=os.path.join(output_dir, metrics_file_name), data=metrics)
 
     return metrics

@@ -6,7 +6,9 @@ import pytest
 import graph_rag
 
 MODULES = sorted(
-    info.name for info in pkgutil.walk_packages(graph_rag.__path__, prefix="graph_rag.")
+    info.name
+    for info in pkgutil.walk_packages(graph_rag.__path__, prefix="graph_rag.")
+    if not info.name.endswith("__main__")
 )
 
 

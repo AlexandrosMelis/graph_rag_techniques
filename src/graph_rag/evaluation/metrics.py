@@ -9,9 +9,7 @@ import pandas as pd
 from graph_rag.utils import save_json_file
 
 
-def precision_at_k(
-    true_lists: List[List[str]], pred_lists: List[List[str]], k: int
-) -> float:
+def precision_at_k(true_lists: List[List[str]], pred_lists: List[List[str]], k: int) -> float:
     precisions = []
     for true, pred in zip(true_lists, pred_lists):
         top_k = pred[:k]
@@ -23,15 +21,11 @@ def precision_at_k(
     return float(np.mean(precisions))
 
 
-def recall_at_k(
-    true_lists: List[List[str]], pred_lists: List[List[str]], k: int
-) -> float:
+def recall_at_k(true_lists: List[List[str]], pred_lists: List[List[str]], k: int) -> float:
     recalls = []
     for true, pred in zip(true_lists, pred_lists):
         top_k = pred[:k]
-        recalls.append(
-            (sum(1 for p in top_k if p in true) / len(true)) if true else 0.0
-        )
+        recalls.append((sum(1 for p in top_k if p in true) / len(true)) if true else 0.0)
     return float(np.mean(recalls))
 
 
@@ -43,16 +37,12 @@ def f1_at_k(true_lists: List[List[str]], pred_lists: List[List[str]], k: int) ->
         precision = tp / k if k > 0 else 0.0
         recall = tp / len(true) if true else 0.0
         f1s.append(
-            2 * precision * recall / (precision + recall)
-            if (precision + recall) > 0
-            else 0.0
+            2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
         )
     return float(np.mean(f1s))
 
 
-def mean_reciprocal_rank(
-    true_lists: List[List[str]], pred_lists: List[List[str]], k: int
-) -> float:
+def mean_reciprocal_rank(true_lists: List[List[str]], pred_lists: List[List[str]], k: int) -> float:
     rr = []
     for true, pred in zip(true_lists, pred_lists):
         score = 0.0
@@ -64,40 +54,29 @@ def mean_reciprocal_rank(
     return float(np.mean(rr))
 
 
-def ndcg_at_k(
-    true_lists: List[List[str]], pred_lists: List[List[str]], k: int
-) -> float:
+def ndcg_at_k(true_lists: List[List[str]], pred_lists: List[List[str]], k: int) -> float:
     ndcgs = []
     for true, pred in zip(true_lists, pred_lists):
         dcg = 0.0
         for i, p in enumerate(pred[:k], start=1):
             rel = 1 if p in true else 0
             dcg += (2**rel - 1) / math.log2(i + 1)
-        ideal_dcg = sum(
-            (2**1 - 1) / math.log2(i + 1) for i in range(1, min(len(true), k) + 1)
-        )
+        ideal_dcg = sum((2**1 - 1) / math.log2(i + 1) for i in range(1, min(len(true), k) + 1))
         ndcgs.append(dcg / ideal_dcg if ideal_dcg > 0 else 0.0)
     return float(np.mean(ndcgs))
 
 
-def success_at_k(
-    true_lists: List[List[str]], pred_lists: List[List[str]], k: int
-) -> float:
+def success_at_k(true_lists: List[List[str]], pred_lists: List[List[str]], k: int) -> float:
     successes = []
     for true, pred in zip(true_lists, pred_lists):
         successes.append(1.0 if any(p in true for p in pred[:k]) else 0.0)
     return float(np.mean(successes))
 
 
-def coverage_at_k(
-    true_lists: List[List[str]], pred_lists: List[List[str]], k: int
-) -> float:
+def coverage_at_k(true_lists: List[List[str]], pred_lists: List[List[str]], k: int) -> float:
     all_true = set(pmid for true in true_lists for pmid in true)
     retrieved = set(
-        p
-        for pred in pred_lists
-        for p in pred[:k]
-        if any(p in true for true in true_lists)
+        p for pred in pred_lists for p in pred[:k] if any(p in true for true in true_lists)
     )
     return len(retrieved) / len(all_true) if all_true else 0.0
 
@@ -116,10 +95,7 @@ def average_precision_at_k(true: List[str], pred: List[str], k: int) -> float:
 
 
 def map_at_k(true_lists: List[List[str]], pred_lists: List[List[str]], k: int) -> float:
-    aps = [
-        average_precision_at_k(true, pred, k)
-        for true, pred in zip(true_lists, pred_lists)
-    ]
+    aps = [average_precision_at_k(true, pred, k) for true, pred in zip(true_lists, pred_lists)]
     return float(np.mean(aps))
 
 
@@ -193,9 +169,7 @@ class NonLLMRetrievalEvaluator:
 
     def generate_summary_report(self, output_path: str = None) -> pd.DataFrame:
         if not self.metrics_per_k:
-            raise ValueError(
-                "Run calculate_evaluation_metrics first to populate metrics_per_k."
-            )
+            raise ValueError("Run calculate_evaluation_metrics first to populate metrics_per_k.")
         df = pd.DataFrame(self.metrics_per_k).T
         df.index.name = "k"
         if output_path:
@@ -210,9 +184,7 @@ class NonLLMRetrievalEvaluator:
         retriever_name: str = "test_retriever",
     ) -> None:
         if not self.metrics_per_k:
-            raise ValueError(
-                "Run calculate_evaluation_metrics first to populate metrics_per_k."
-            )
+            raise ValueError("Run calculate_evaluation_metrics first to populate metrics_per_k.")
         df = pd.DataFrame(self.metrics_per_k).T
         ks = df.index.values
         to_plot = metrics_to_plot or [c for c in df.columns if c != "coverage"]
@@ -275,9 +247,7 @@ class NonLLMRetrievalEvaluator:
         alpha = 1 - confidence
         for name, fn in metric_fns.items():
             mean = fn(true_lists, pred_lists, k)
-            lower, upper = bootstrap_confidence_interval(
-                fn, true_lists, pred_lists, k, alpha=alpha
-            )
+            lower, upper = bootstrap_confidence_interval(fn, true_lists, pred_lists, k, alpha=alpha)
             ci[f"{name}@{k}"] = {
                 "mean": mean,
                 "lower_bound": lower,
@@ -298,20 +268,14 @@ def run_evaluation(
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
         save_json_file(
-            file_path=os.path.join(
-                output_dir, f"{retriever_name}_retrieval_metrics.json"
-            ),
+            file_path=os.path.join(output_dir, f"{retriever_name}_retrieval_metrics.json"),
             data=metrics,
         )
         evaluator.generate_summary_report(
-            output_path=os.path.join(
-                output_dir, f"{retriever_name}_retrieval_metrics_summary.csv"
-            )
+            output_path=os.path.join(output_dir, f"{retriever_name}_retrieval_metrics_summary.csv")
         )
         evaluator.plot_metrics(
-            output_path=os.path.join(
-                output_dir, f"{retriever_name}_retrieval_metrics_plot.png"
-            ),
+            output_path=os.path.join(output_dir, f"{retriever_name}_retrieval_metrics_plot.png"),
             retriever_name=retriever_name,
         )
 

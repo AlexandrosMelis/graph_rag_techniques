@@ -235,6 +235,7 @@ def train_graph_reranker(
     builder: CandidateGraphBuilder,
     config: RerankerTrainingConfig = RerankerTrainingConfig(),
     log: Callable[[str], None] = print,
+    on_epoch: Optional[Callable[[int, dict], None]] = None,
 ) -> tuple[GraphReranker, dict]:
     """Listwise training over each query's candidate graph; best dev Recall@k is kept."""
     random.seed(config.seed)
@@ -291,6 +292,8 @@ def train_graph_reranker(
         history["loss"].append(float(np.mean(losses)))
         history["dev_recall"].append(recall)
         log(f"epoch {epoch}: loss={np.mean(losses):.4f} dev recall@{config.eval_k}={recall:.4f}")
+        if on_epoch:
+            on_epoch(epoch, {"loss": float(np.mean(losses)), "dev_recall": recall})
         if recall > best_recall:
             best_recall, stale = recall, 0
             best_state = {k: v.clone() for k, v in model.state_dict().items()}

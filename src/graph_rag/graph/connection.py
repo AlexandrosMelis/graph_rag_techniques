@@ -3,9 +3,7 @@ from neo4j import GraphDatabase
 
 class Neo4jConnection:
     def __init__(self, uri: str, user: str, password: str, database: str):
-        self.driver = GraphDatabase.driver(
-            uri, auth=(user, password), database=database
-        )
+        self.driver = GraphDatabase.driver(uri, auth=(user, password), database=database)
         print(f"Using database: {database}")
         try:
             self.driver.verify_connectivity()
